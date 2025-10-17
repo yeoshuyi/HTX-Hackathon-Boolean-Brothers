@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firefighter Situation Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="main.js" defer></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
+    .map-container { position: relative; width: 100%; height: 100%; background: #1a1a1a; }
+    .map-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body class="bg-gray-900 text-white">
+
+  <div class="flex flex-col h-screen">
+    <!-- 🔹 Top Bar -->
+    <div class="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+      <h1 class="text-xl font-bold">Firefighter Situation Map</h1>
+      <button id="runMazeBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold">
+        🧩 Generate Path Map
+      </button>
+    </div>
+
+    <!-- 🔹 Map Container -->
+    <div class="flex-1 relative">
+      <div class="map-container">
+        <div id="floorplanLayer" class="map-layer"
+             style="background: #1a1a1a center center / contain no-repeat;">
+        </div>
+      </div>    
+    </div>
+  </div>
+
+</body>
+</html>
