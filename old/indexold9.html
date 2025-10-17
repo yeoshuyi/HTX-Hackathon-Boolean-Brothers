@@ -26,79 +26,23 @@
 
     #heatmapCanvas { z-index: 3; pointer-events: none; display: none; }
     #annotationCanvas { z-index: 5; cursor: crosshair; display: none; pointer-events: auto; }
-    #rulerCanvas { z-index: 25; pointer-events: auto; display: none; } /* Ruler canvas now enabled by default to be interactable */
+    #rulerCanvas { z-index: 25; pointer-events: none; display: none; }
 
-    /* Updated firefighter markers to match sidebar style with numbered badge */
+    /* Photoshop-style firefighter markers - flat, square design */
     .firefighter-marker {
       position: absolute;
-      width: 40px; height: 40px;
+      width: 32px; height: 32px;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 1px;
       transform: translate(-50%, -50%);
-      display: flex; 
-      align-items: center; 
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 600; font-size: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.6);
+      transition: transform 0.1s;
       pointer-events: auto;
       z-index: 11;
-      cursor: grab;
-      user-select: none;
     }
-    .firefighter-marker:active { cursor: grabbing; }
-    
-    .firefighter-badge {
-      width: 40px; 
-      height: 40px; 
-      border-radius: 3px;
-      display: flex; 
-      align-items: center; 
-      justify-content: center;
-      font-size: 16px;
-      font-weight: 600;
-      color: white;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.7);
-      border: 1px solid rgba(255,255,255,0.2);
-      transition: transform 0.1s;
-    }
-    .firefighter-marker:hover .firefighter-badge { 
-      transform: scale(1.1); 
-    }
-    
-    /* Added popup menu for firefighter info */
-    .firefighter-popup {
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      margin-top: 8px;
-      background: #2a2a2a;
-      border: 1px solid #3f3f3f;
-      border-radius: 2px;
-      padding: 8px 12px;
-      min-width: 140px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-      z-index: 100;
-      pointer-events: none;
-    }
-    
-    .firefighter-popup::before {
-      content: '';
-      position: absolute;
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      border: 6px solid transparent;
-      border-bottom-color: #3f3f3f;
-    }
-    
-    .firefighter-popup-name {
-      font-size: 11px;
-      font-weight: 600;
-      color: #fff;
-      margin-bottom: 4px;
-    }
-    
-    .firefighter-popup-o2 {
-      font-size: 10px;
-      color: #aaa;
-    }
+    .firefighter-marker:hover { transform: translate(-50%, -50%) scale(1.08); }
 
     .o2-bar { height: 4px; border-radius: 0; transition: width 0.3s, background 0.3s; }
     .o2-bar.high { background: #4ade80; }
@@ -121,63 +65,26 @@
     .icon-emoji { font-size: 28px; line-height: 1; user-select: none; }
     .icon-svg { width: 28px; height: 28px; display: block; user-select: none; }
 
-    /* Updated ruler markers to be more visible */
+    /* Ruler markers - similar to icon markers */
     .ruler-marker {
       position: absolute;
       transform: translate(-50%, -50%);
-      width: 14px; height: 14px;
+      width: 12px; height: 12px;
       background: #0d7bdb;
       border: 2px solid #fff;
       border-radius: 50%;
       z-index: 26; cursor: grab; user-select: none; pointer-events: auto;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.7);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.7);
     }
     .ruler-marker:active { cursor: grabbing; }
-    .ruler-marker:hover { background: #0c6ec7; transform: translate(-50%, -50%) scale(1.15); }
-
-    /* Added reference scale styling */
-    .reference-scale {
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      z-index: 30;
-      background: #2a2a2a;
-      border: 1px solid #3f3f3f;
-      border-radius: 2px;
-      padding: 8px 12px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-      pointer-events: none;
-    }
-    
-    .reference-scale-line {
-      width: 100px;
-      height: 2px;
-      background: #0d7bdb;
-      position: relative;
-      margin-bottom: 4px;
-    }
-    
-    .reference-scale-tick {
-      position: absolute;
-      width: 2px;
-      height: 8px;
-      background: #0d7bdb;
-      top: -3px;
-    }
-    
-    .reference-scale-label {
-      font-size: 11px;
-      color: #fff;
-      text-align: center;
-      font-weight: 500;
-    }
+    .ruler-marker:hover { background: #0c6ec7; }
 
     .dyn-marker { 
       position:absolute; transform:translate(-50%,-50%); width:34px; height:34px;
       z-index:22; cursor:grab; display:grid; place-items:center; pointer-events:auto;
       filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7)); 
     }
-    .dyn-marker:active { cursor: grabbing; }
+    .dyn-marker:active { cursor:grabbing; }
 
     .toggle-btn.active { background: #0d7bdb; color: white; border-color: #0a5fa8; }
     .invalid { box-shadow: 0 0 0 2px #ef4444; }
@@ -277,6 +184,7 @@
         ✏️ Annotations
       </button>
       
+      <!-- New ruler toggle -->
       <button id="toggleRuler" class="toggle-btn w-full px-3 py-2 bg-[#383838] border border-[#4a4a4a] rounded text-xs font-medium hover:bg-[#404040] text-left">
         📏 Ruler
       </button>
@@ -318,14 +226,9 @@
         <span class="icon-emoji" title="End">🏁</span>
       </div>
 
-      <!-- Reference scale at bottom right -->
-      <div class="reference-scale">
-        <div class="reference-scale-line">
-          <div class="reference-scale-tick" style="left: 0;"></div>
-          <div class="reference-scale-tick" style="right: 0;"></div>
-        </div>
-        <div class="reference-scale-label">1 meter</div>
-      </div>
+      <!-- Ruler markers (hidden by default) -->
+      <div id="rulerPoint1" class="ruler-marker" style="left: 100px; top: 100px; display: none;"></div>
+      <div id="rulerPoint2" class="ruler-marker" style="left: 200px; top: 100px; display: none;"></div>
 
       <!-- Left vertical toolbar for annotation tools -->
       <div id="leftToolbar" style="display: none;">
@@ -388,105 +291,23 @@ function initFirefighterList(){
   });
 }
 
-let activePopupMarker = null;
-
 function initFirefighterMarkers(){
   const layer=document.getElementById('locationsLayer');
   layer.innerHTML='';
-  
   firefighters.forEach(ff=>{
     const m=document.createElement('div');
     m.className='firefighter-marker';
-    const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
-    m.style.left=`${offsetX + (ff.x / 100) * displayWidth}px`;
-    m.style.top=`${offsetY + (ff.y / 100) * displayHeight}px`;
-    m.dataset.firefighterId = ff.id;
-    
-    // Create badge matching sidebar style
-    const badge = document.createElement('div');
-    badge.className = 'firefighter-badge';
-    badge.style.background = 'linear-gradient(to bottom right, #dc2626, #ea580c)';
-    badge.textContent = ff.id;
-    m.appendChild(badge);
-    
-    // Create popup (hidden by default)
-    const popup = document.createElement('div');
-    popup.className = 'firefighter-popup';
-    popup.style.display = 'none';
-    popup.innerHTML = `
-      <div class="firefighter-popup-name">${ff.name}</div>
-      <div class="firefighter-popup-o2">O₂: ${ff.o2}%</div>
-    `;
-    m.appendChild(popup);
-    
-    let isDragging = false;
-    let hasMoved = false;
-    let dragStartX = 0, dragStartY = 0;
-    
-    m.addEventListener('pointerdown', (e)=>{
-      isDragging = true;
-      hasMoved = false;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      m.setPointerCapture(e.pointerId);
-      e.stopPropagation();
-    });
-    
-    m.addEventListener('pointermove', (e)=>{
-      if (!isDragging) return;
-      
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        hasMoved = true;
-        
-        const containerRect = mapContainer.getBoundingClientRect();
-        let x = e.clientX - containerRect.left;
-        let y = e.clientY - containerRect.top;
-
-        const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
-        const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
-
-        x = Math.max(minX, Math.min(maxX, x));
-        y = Math.max(minY, Math.min(maxY, y));
-
-        m.style.left = `${x}px`;
-        m.style.top  = `${y}px`;
-        
-        // Update firefighter data
-        ff.x = ((x - offsetX) / displayWidth) * 100;
-        ff.y = ((y - offsetY) / displayHeight) * 100;
-        
-        if (heatmapCanvas.style.display !== 'none') drawHeatmap();
-      }
-    });
-    
-    m.addEventListener('pointerup', (e)=>{
-      if (!isDragging) return;
-      m.releasePointerCapture(e.pointerId);
-      isDragging = false;
-      
-      if (!hasMoved) {
-        // Toggle popup only if not dragged
-        if (activePopupMarker === m) {
-          popup.style.display = 'none';
-          activePopupMarker = null;
-        } else {
-          // Hide other popups
-          if (activePopupMarker) {
-            const otherPopup = activePopupMarker.querySelector('.firefighter-popup');
-            if (otherPopup) otherPopup.style.display = 'none';
-          }
-          popup.style.display = 'block';
-          activePopupMarker = m;
-        }
-      }
-    });
-    
+    m.style.left=`${ff.x}%`;
+    m.style.top=`${ff.y}%`;
+    m.style.background=getO2Color(ff.o2);
+    m.textContent=ff.id;
+    m.title=`${ff.name} - O₂: ${ff.o2}%`;
     layer.appendChild(m);
   });
 }
+initFirefighterList();
+initFirefighterMarkers();
+document.getElementById("personnelCount").textContent = firefighters.length;
 
 /* --- Timer --- */
 let sec=0;
@@ -529,7 +350,7 @@ const startMarker = document.getElementById('startMarker');
 const endMarker = document.getElementById('endMarker');
 let dragging = null;
 let dragOffsetX = 0, dragOffsetY = 0;
-let startPoint = null;
+let startPoint = null; // normalized [0..1]
 let goalPoint  = null;
 
 [startMarker, endMarker].forEach(marker=>{
@@ -617,17 +438,6 @@ document.getElementById("clearBtn").addEventListener("click",()=>{
   dynMarkers.forEach(m=>m.el.remove());
   dynMarkers = [];
   if (heatmapCanvas.style.display !== 'none') drawHeatmap();
-  
-  rulerPoints.forEach(p => p.el.remove());
-  rulerPoints = [];
-  if (rulerEnabled) {
-    const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
-    const marker1 = createRulerPoint(offsetX + displayWidth * 0.3, offsetY + displayHeight * 0.5);
-    const marker2 = createRulerPoint(offsetX + displayWidth * 0.7, offsetY + displayHeight * 0.5);
-    rulerPoints.push({x: offsetX + displayWidth * 0.3, y: offsetY + displayHeight * 0.5, el: marker1});
-    rulerPoints.push({x: offsetX + displayWidth * 0.7, y: offsetY + displayHeight * 0.5, el: marker2});
-    drawRuler();
-  }
 });
 
 /* --- Annotation Drawing + bottom bar + dynamic markers --- */
@@ -657,24 +467,12 @@ function resizeCanvasPreserve(){
   // Restore drawing
   ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, annotationCanvas.width, annotationCanvas.height);
 
-  if (document.getElementById('locationsLayer').style.display !== 'none') {
-    initFirefighterMarkers();
-  }
-
   if (heatmapCanvas.style.display !== 'none') drawHeatmap();
   if (rulerCanvas.style.display !== 'none') drawRuler();
 }
 window.addEventListener("resize",resizeCanvasPreserve);
-floorplan.onload = ()=>{
-  resizeCanvasPreserve();
-  initFirefighterList();
-  initFirefighterMarkers();
-};
-setTimeout(()=>{
-  resizeCanvasPreserve();
-  initFirefighterList();
-  initFirefighterMarkers();
-}, 0);
+floorplan.onload = resizeCanvasPreserve;
+setTimeout(resizeCanvasPreserve, 0);
 
 toggleAnnotationsBtn.addEventListener("click",()=>{
   isDrawingEnabled = !isDrawingEnabled;
@@ -730,7 +528,7 @@ annotationCanvas.addEventListener("touchend",endStroke);
 annotationCanvas.addEventListener("touchcancel",endStroke);
 
 /* --- Dynamic markers: create, drag, erase --- */
-let dynMarkers = [];
+let dynMarkers = []; // {el, type:'fire'|'casualty'}
 
 function addDynamicMarker(type){
   const el = document.createElement('div');
@@ -748,12 +546,15 @@ function addDynamicMarker(type){
       </svg>`;
   }
 
+  // place near center of visible image
   const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
   el.style.left = `${offsetX + displayWidth/2}px`;
   el.style.top  = `${offsetY + displayHeight/2}px`;
 
+  // drag handling
   let localDragging=false, lx=0, ly=0;
   el.addEventListener('pointerdown', (e)=>{
+    // Erase (remove) if eraser tool active
     if (isErasing){
       e.preventDefault();
       el.remove();
@@ -814,10 +615,11 @@ toggleHeatMapBtn.addEventListener("click", ()=>{
   if (active) drawHeatmap();
 });
 
+// palette matching the sample style (blue→cyan→purple→magenta→pink→orange→yellow)
 const PALETTE = [
   '#2a6df2','#2cc9e4','#3e53e5','#7a3fe6','#c934c1','#f24aa8',
   '#ff6f91','#ff8b57','#ffa63a','#ffc43a','#ffe04a'
-].map(hex=>hexToRGBA(hex, 110));
+].map(hex=>hexToRGBA(hex, 110)); // semi-translucent
 
 function hexToRGBA(hex, alpha=160){
   const h = hex.replace('#','');
@@ -851,8 +653,8 @@ function drawHeatmap(){
   hctx.rect(offsetX, offsetY, displayWidth, displayHeight);
   hctx.clip();
 
+  // Build sources: all fire dynamic markers; if none, synthesize from low O2; add gentle bumps
   const sources = [];
-  
   dynMarkers.filter(m=>m.type==='fire').forEach(m=>{
     const [nx, ny] = getNormalizedXYFromEl(m.el);
     if (nx>=0 && nx<=1 && ny>=0 && ny<=1) sources.push({x:nx, y:ny, power:1.0});
@@ -865,27 +667,26 @@ function drawHeatmap(){
     });
   }
   
-  if (sources.length > 0) {
-    sources.push({x:0.5,y:0.5,power:0.18});
-    const rand = seededRand(Math.floor(Date.now()/60000));
-    for (let i=0;i<10;i++){
-      sources.push({x:0.08+0.84*rand(), y:0.08+0.84*rand(), power:0.05+0.10*rand()});
-    }
-  } else {
-    hctx.restore();
-    return;
+  // Add baseline and random contours - ensure minimum sources for proper spread
+  sources.push({x:0.5,y:0.5,power:0.18});
+  const rand = seededRand(Math.floor(Date.now()/60000));
+  for (let i=0;i<10;i++){
+    sources.push({x:0.08+0.84*rand(), y:0.08+0.84*rand(), power:0.05+0.10*rand()});
   }
 
+  // Multi-scale spread - adjusted for single fire marker
   const baseSigma = Math.max(displayWidth, displayHeight) * 0.16;
   const inv2s1 = 1/(2*baseSigma*baseSigma);
   const inv2s2 = 1/(2*(baseSigma*0.55)*(baseSigma*0.55));
   
+  // Calculate sum power with minimum threshold to prevent division issues
   const sumPower = Math.max(0.1, sources.reduce((a,s)=>a+s.power,0));
 
-  const step = Math.max(1, Math.floor(Math.min(W,H)/500));
+  const step = Math.max(1, Math.floor(Math.min(W,H)/500)); // hi-res
   const imgData = hctx.createImageData(W, H);
   const data = imgData.data;
 
+  // Quantized band levels for contour look
   const LEVELS = 2*PALETTE.length;
 
   for (let y = Math.floor(offsetY); y < offsetY + displayHeight; y += step){
@@ -903,6 +704,7 @@ function drawHeatmap(){
       }
       let t = (0.65*v1 + 0.35*v2) / (0.9*sumPower);
       t = Math.max(0, Math.min(1, t));
+      // banding
       const band = Math.min(LEVELS-1, Math.floor(t * LEVELS));
       const [r,g,b,a] = PALETTE[band];
 
@@ -911,13 +713,14 @@ function drawHeatmap(){
         for (let xx=0; xx<step; xx++){
           const px = x+xx; if (px<0||px>=W) continue;
           const idx = (py*W + px)*4;
-          data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = a;
+          data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = a; // translucent
         }
       }
     }
   }
   hctx.putImageData(imgData, 0, 0);
 
+  // Gentle blur to soften band edges a touch
   hctx.filter = 'blur(2px)';
   hctx.drawImage(heatmapCanvas, 0, 0);
   hctx.filter = 'none';
@@ -925,241 +728,139 @@ function drawHeatmap(){
   hctx.restore();
 }
 
+/* --- Ruler functionality --- */
 const toggleRulerBtn = document.getElementById('toggleRuler');
+const rulerPoint1 = document.getElementById('rulerPoint1');
+const rulerPoint2 = document.getElementById('rulerPoint2');
 let rulerEnabled = false;
-let rulerPoints = []; // Array of {x, y, el} objects
 let rulerDragging = null;
+
+// Assume floorplan width = 20m
 const FLOORPLAN_WIDTH_METERS = 20;
 
 toggleRulerBtn.addEventListener('click', ()=>{
   rulerEnabled = !rulerEnabled;
   toggleRulerBtn.classList.toggle('active', rulerEnabled);
   rulerCanvas.style.display = rulerEnabled ? 'block' : 'none';
+  rulerPoint1.style.display = rulerEnabled ? 'block' : 'none';
+  rulerPoint2.style.display = rulerEnabled ? 'block' : 'none';
   
   if (rulerEnabled) {
-    if (rulerPoints.length === 0) {
-      const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
-      const marker1 = createRulerPoint(offsetX + displayWidth * 0.3, offsetY + displayHeight * 0.5);
-      const marker2 = createRulerPoint(offsetX + displayWidth * 0.7, offsetY + displayHeight * 0.5);
-      rulerPoints.push({x: offsetX + displayWidth * 0.3, y: offsetY + displayHeight * 0.5, el: marker1});
-      rulerPoints.push({x: offsetX + displayWidth * 0.7, y: offsetY + displayHeight * 0.5, el: marker2});
-    } else {
-      rulerPoints.forEach(p => p.el.style.display = 'block');
-    }
+    // Position ruler points on the floorplan
+    const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+    rulerPoint1.style.left = `${offsetX + displayWidth * 0.3}px`;
+    rulerPoint1.style.top = `${offsetY + displayHeight * 0.5}px`;
+    rulerPoint2.style.left = `${offsetX + displayWidth * 0.7}px`;
+    rulerPoint2.style.top = `${offsetY + displayHeight * 0.5}px`;
     drawRuler();
-  } else {
-    rulerPoints.forEach(p => p.el.style.display = 'none');
   }
 });
 
-function createRulerPoint(x, y) {
-  const marker = document.createElement('div');
-  marker.className = 'ruler-marker';
-  marker.style.left = `${x}px`;
-  marker.style.top = `${y}px`;
-  marker.style.display = rulerEnabled ? 'block' : 'none';
-  
+[rulerPoint1, rulerPoint2].forEach(marker=>{
   marker.addEventListener('pointerdown', (e)=>{
     rulerDragging = marker;
     const r = marker.getBoundingClientRect();
     dragOffsetX = e.clientX - r.left;
     dragOffsetY = e.clientY - r.top;
     marker.setPointerCapture(e.pointerId);
-    e.stopPropagation();
   });
-  
   marker.addEventListener('pointermove', (e)=>{
     if (rulerDragging !== marker) return;
     const containerRect = mapContainer.getBoundingClientRect();
-    let newX = e.clientX - containerRect.left - dragOffsetX + marker.offsetWidth/2;
-    let newY = e.clientY - containerRect.top  - dragOffsetY + marker.offsetHeight/2;
+    let x = e.clientX - containerRect.left - dragOffsetX + marker.offsetWidth/2;
+    let y = e.clientY - containerRect.top  - dragOffsetY + marker.offsetHeight/2;
 
     const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
     const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
 
-    newX = Math.max(minX, Math.min(maxX, newX));
-    newY = Math.max(minY, Math.min(maxY, newY));
+    x = Math.max(minX, Math.min(maxX, x));
+    y = Math.max(minY, Math.min(maxY, y));
 
-    marker.style.left = `${newX}px`;
-    marker.style.top  = `${newY}px`;
-    
-    // Update point in array
-    const point = rulerPoints.find(p => p.el === marker);
-    if (point) {
-      point.x = newX;
-      point.y = newY;
-    }
+    marker.style.left = `${x}px`;
+    marker.style.top  = `${y}px`;
     
     drawRuler();
-    e.stopPropagation();
   });
-  
   marker.addEventListener('pointerup', (e)=>{
     if (rulerDragging !== marker) return;
     marker.releasePointerCapture(e.pointerId);
     rulerDragging = null;
-    e.stopPropagation();
   });
-  
-  mapContainer.appendChild(marker);
-  return marker;
-}
-
-rulerCanvas.addEventListener('click', (e)=>{
-  if (!rulerEnabled || rulerPoints.length < 2) return;
-  
-  const containerRect = mapContainer.getBoundingClientRect();
-  const clickX = e.clientX - containerRect.left;
-  const clickY = e.clientY - containerRect.top;
-  
-  // Check if click is near any line segment
-  const threshold = 10; // pixels
-  
-  for (let i = 0; i < rulerPoints.length - 1; i++) {
-    const p1 = rulerPoints[i];
-    const p2 = rulerPoints[i + 1];
-    
-    // Calculate distance from point to line segment
-    const dist = distanceToSegment(clickX, clickY, p1.x, p1.y, p2.x, p2.y);
-    
-    if (dist < threshold) {
-      // Create new marker but don't let createRulerPoint add to array
-      const newMarker = createRulerPoint(clickX, clickY);
-      
-      // Insert into array at correct position (only once)
-      rulerPoints.splice(i + 1, 0, {x: clickX, y: clickY, el: newMarker});
-      
-      drawRuler();
-      break;
-    }
-  }
 });
 
-function distanceToSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const lengthSquared = dx * dx + dy * dy;
-  
-  if (lengthSquared === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
-  
-  let t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
-  t = Math.max(0, Math.min(1, t));
-  
-  const projX = x1 + t * dx;
-  const projY = y1 + t * dy;
-  
-  return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
-}
-
 function drawRuler(){
-  if (!rulerEnabled || rulerPoints.length < 2) return;
+  if (!rulerEnabled) return;
   
   const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
   const W = rulerCanvas.width, H = rulerCanvas.height;
   
   rctx.clearRect(0, 0, W, H);
   
+  // Get ruler point positions
   const containerRect = mapContainer.getBoundingClientRect();
+  const r1 = rulerPoint1.getBoundingClientRect();
+  const r2 = rulerPoint2.getBoundingClientRect();
   
-  // Calculate total distance
-  let totalDistPx = 0;
-  for (let i = 0; i < rulerPoints.length - 1; i++) {
-    const p1 = rulerPoints[i];
-    const p2 = rulerPoints[i + 1];
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    totalDistPx += Math.sqrt(dx * dx + dy * dy);
-  }
+  const x1 = r1.left - containerRect.left + r1.width/2;
+  const y1 = r1.top - containerRect.top + r1.height/2;
+  const x2 = r2.left - containerRect.left + r2.width/2;
+  const y2 = r2.top - containerRect.top + r2.height/2;
   
-  const totalDistMeters = (totalDistPx / displayWidth) * FLOORPLAN_WIDTH_METERS;
+  // Calculate distance in pixels
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const distPx = Math.sqrt(dx*dx + dy*dy);
   
-  // Draw line segments
+  // Convert to meters (displayWidth = 20m)
+  const distMeters = (distPx / displayWidth) * FLOORPLAN_WIDTH_METERS;
+  
+  // Draw line
   rctx.strokeStyle = '#0d7bdb';
   rctx.lineWidth = 2;
   rctx.beginPath();
-  rctx.moveTo(rulerPoints[0].x, rulerPoints[0].y);
-  for (let i = 1; i < rulerPoints.length; i++) {
-    rctx.lineTo(rulerPoints[i].x, rulerPoints[i].y);
-  }
+  rctx.moveTo(x1, y1);
+  rctx.lineTo(x2, y2);
   rctx.stroke();
   
-  // Draw tick marks every 1m along the path
+  // Draw tick marks every 1m
+  const angle = Math.atan2(dy, dx);
+  const metersPerPx = FLOORPLAN_WIDTH_METERS / displayWidth;
   const pxPerMeter = displayWidth / FLOORPLAN_WIDTH_METERS;
-  let accumulatedDist = 0;
   
-  for (let i = 0; i < rulerPoints.length - 1; i++) {
-    const p1 = rulerPoints[i];
-    const p2 = rulerPoints[i + 1];
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const segmentLength = Math.sqrt(dx * dx + dy * dy);
-    const angle = Math.atan2(dy, dx);
+  const numTicks = Math.floor(distMeters);
+  for (let i = 1; i <= numTicks; i++){
+    const t = (i * pxPerMeter) / distPx;
+    if (t >= 1) break;
     
-    // Draw ticks for this segment
-    let distInSegment = 0;
-    while (distInSegment < segmentLength) {
-      const nextTickDist = Math.ceil((accumulatedDist + distInSegment) / pxPerMeter) * pxPerMeter;
-      const tickDistInSegment = nextTickDist - accumulatedDist;
-      
-      if (tickDistInSegment > segmentLength) break;
-      if (tickDistInSegment <= 0) {
-        distInSegment = pxPerMeter;
-        continue;
-      }
-      
-      const t = tickDistInSegment / segmentLength;
-      const tickX = p1.x + dx * t;
-      const tickY = p1.y + dy * t;
-      
-      // Perpendicular tick marks
-      const perpAngle = angle + Math.PI/2;
-      const tickLen = 8;
-      const tx1 = tickX + Math.cos(perpAngle) * tickLen;
-      const ty1 = tickY + Math.sin(perpAngle) * tickLen;
-      const tx2 = tickX - Math.cos(perpAngle) * tickLen;
-      const ty2 = tickY - Math.sin(perpAngle) * tickLen;
-      
-      rctx.strokeStyle = '#0d7bdb';
-      rctx.lineWidth = 1.5;
-      rctx.beginPath();
-      rctx.moveTo(tx1, ty1);
-      rctx.lineTo(tx2, ty2);
-      rctx.stroke();
-      
-      distInSegment = tickDistInSegment + pxPerMeter;
-    }
+    const tickX = x1 + dx * t;
+    const tickY = y1 + dy * t;
     
-    accumulatedDist += segmentLength;
+    // Perpendicular tick marks
+    const perpAngle = angle + Math.PI/2;
+    const tickLen = 8;
+    const tx1 = tickX + Math.cos(perpAngle) * tickLen;
+    const ty1 = tickY + Math.sin(perpAngle) * tickLen;
+    const tx2 = tickX - Math.cos(perpAngle) * tickLen;
+    const ty2 = tickY - Math.sin(perpAngle) * tickLen;
+    
+    rctx.strokeStyle = '#0d7bdb';
+    rctx.lineWidth = 1.5;
+    rctx.beginPath();
+    rctx.moveTo(tx1, ty1);
+    rctx.lineTo(tx2, ty2);
+    rctx.stroke();
   }
   
-  // Draw distance label at midpoint of path
-  let midDist = totalDistPx / 2;
-  let currentDist = 0;
-  let midX = 0, midY = 0, midAngle = 0;
-  
-  for (let i = 0; i < rulerPoints.length - 1; i++) {
-    const p1 = rulerPoints[i];
-    const p2 = rulerPoints[i + 1];
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const segmentLength = Math.sqrt(dx * dx + dy * dy);
-    
-    if (currentDist + segmentLength >= midDist) {
-      const t = (midDist - currentDist) / segmentLength;
-      midX = p1.x + dx * t;
-      midY = p1.y + dy * t;
-      midAngle = Math.atan2(dy, dx);
-      break;
-    }
-    currentDist += segmentLength;
-  }
+  // Draw distance label
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
   
   // Offset label perpendicular to line
   const labelOffset = 20;
-  const labelX = midX + Math.cos(midAngle + Math.PI/2) * labelOffset;
-  const labelY = midY + Math.sin(midAngle + Math.PI/2) * labelOffset;
+  const labelX = midX + Math.cos(angle + Math.PI/2) * labelOffset;
+  const labelY = midY + Math.sin(angle + Math.PI/2) * labelOffset;
   
-  const labelText = `${totalDistMeters.toFixed(2)}m`;
+  const labelText = `${distMeters.toFixed(2)}m`;
   
   // Background for label
   rctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';

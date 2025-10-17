@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firefighter Situation Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    .map-container {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 140px);
+      background: #1a1a1a;
+      overflow: hidden;
+    }
+
+    #floorplan, #heatmapCanvas, #annotationCanvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
+    }
+
+    #heatmapCanvas { z-index: 3; pointer-events: none; display: none; }
+    #annotationCanvas { z-index: 5; cursor: crosshair; display: none; pointer-events: auto; }
+
+    .firefighter-marker {
+      position: absolute;
+      width: 32px; height: 32px;
+      border: 2px solid rgba(255,255,255,0.9); border-radius: 2px;
+      transform: translate(-50%, -50%);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 600; font-size: 13px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+      transition: transform 0.15s;
+      pointer-events: auto;
+    }
+    .firefighter-marker:hover { transform: translate(-50%, -50%) scale(1.1); }
+
+    .o2-bar { height: 6px; border-radius: 1px; transition: width 0.3s, background 0.3s; }
+    .o2-bar.high { background: #4ade80; }
+    .o2-bar.medium { background: #facc15; }
+    .o2-bar.low { background: #f87171; }
+    .o2-bar.critical { background: #dc2626; animation: pulse 1s infinite; }
+
+    #locationsLayer { z-index: 10; pointer-events: none; }
+
+    /* Fixed Start/End icon markers */
+    .icon-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 38px; height: 38px;
+      z-index: 20; cursor: grab; user-select: none; pointer-events: auto;
+      display: grid; place-items: center;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+    }
+    .icon-marker:active { cursor: grabbing; }
+    .icon-emoji { font-size: 30px; line-height: 1; user-select: none; }
+    .icon-svg { width: 30px; height: 30px; display: block; user-select: none; }
+
+    /* Dynamic, erasable markers (fire/casualty) */
+    .dyn-marker { position:absolute; transform:translate(-50%,-50%); width:36px; height:36px;
+      z-index:22; cursor:grab; display:grid; place-items:center; pointer-events:auto;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); }
+    .dyn-marker:active { cursor:grabbing; }
+
+    .toggle-btn.active { background: #3b82f6; color: white; border-color: #2563eb; }
+    .invalid { box-shadow: 0 0 0 2px #ef4444; }
+
+    /* Bottom annotation bar - Photoshop style */
+    #annotationBar {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: 16px; z-index: 30;
+      background: #2a2a2a;
+      border: 1px solid #3f3f3f;
+      border-radius: 4px;
+      padding: 8px 10px;
+      display: none;
+      gap: 8px; align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .tool-btn {
+      padding: 6px 10px; border-radius: 3px;
+      background: #383838;
+      border: 1px solid #4a4a4a;
+      font-weight: 500;
+      font-size: 13px;
+      transition: all 0.1s;
+    }
+    .tool-btn:hover {
+      background: #404040;
+      border-color: #555;
+    }
+    .tool-btn.active {
+      background: #0d7bdb;
+      border-color: #0d7bdb;
+      color: white;
+    }
+    .color-chip {
+      width: 20px; height: 20px; border-radius: 2px;
+      border: 1px solid #555;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    .color-chip:hover {
+      border-color: #888;
+    }
+    .color-chip.selected { 
+      box-shadow: 0 0 0 2px #0d7bdb;
+      border-color: #0d7bdb;
+    }
+  </style>
+</head>
+
+<body class="bg-[#1e1e1e] text-gray-200">
+<div class="flex h-screen">
+  <!-- Sidebar -->
+  <div class="w-80 bg-[#252525] border-r border-[#3a3a3a] overflow-y-auto">
+    <div class="p-4 bg-[#c53030] border-b border-[#a02626]">
+      <h1 class="text-lg font-semibold tracking-tight">Firefighter Status</h1>
+      <p class="text-xs text-red-100 mt-0.5">Live Monitoring</p>
+    </div>
+    <div id="firefighterList" class="divide-y divide-[#333]"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="flex-1 flex flex-col">
+    <div class="bg-[#2a2a2a] border-b border-[#3a3a3a] p-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex gap-2 items-center">
+        <button id="toggleLocations" class="toggle-btn px-3 py-1.5 bg-[#383838] border border-[#4a4a4a] rounded text-sm font-medium hover:bg-[#404040] active">📍 Locations</button>
+        <button id="toggleHeatMap" class="toggle-btn px-3 py-1.5 bg-[#383838] border border-[#4a4a4a] rounded text-sm font-medium hover:bg-[#404040]">🔥 Heat Map</button>
+        <button id="toggleAnnotations" class="toggle-btn px-3 py-1.5 bg-[#383838] border border-[#4a4a4a] rounded text-sm font-medium hover:bg-[#404040]">✏️ Annotations</button>
+      </div>
+      <div class="flex gap-2">
+        <button id="generateBtn" class="px-3 py-1.5 bg-[#0d7bdb] hover:bg-[#0c6ec7] border border-[#0a5fa8] rounded text-white text-sm font-medium">🧩 Generate Path Map</button>
+        <button id="clearBtn" class="px-3 py-1.5 bg-[#383838] border border-[#4a4a4a] rounded text-sm font-medium hover:bg-[#404040]">🧹 Clear</button>
+      </div>
+    </div>
+
+    <!-- Map Area -->
+    <div class="flex-1 relative">
+      <div class="map-container">
+        <img id="floorplan" src="static/floorplan1.png" alt="Floorplan" />
+        <canvas id="heatmapCanvas"></canvas>
+        <canvas id="annotationCanvas"></canvas>
+        <div id="locationsLayer" class="absolute inset-0"></div>
+
+        <!-- Fixed Start/End markers -->
+        <div id="startMarker" class="icon-marker" style="left: 60px; top: 60px;">
+          <span class="icon-emoji" title="Start">🚩</span>
+        </div>
+        <div id="endMarker" class="icon-marker" style="left: 160px; top: 60px;">
+          <span class="icon-emoji" title="End">🏁</span>
+        </div>
+
+        <!-- Bottom annotation toolbar -->
+        <div id="annotationBar" class="flex">
+          <button id="pencilBtn" class="tool-btn active">✏️ Pencil</button>
+          <button id="eraserBtn" class="tool-btn">🧽 Eraser</button>
+
+          <!-- Add markers -->
+          <button id="addFireBtn" class="tool-btn">🔥</button>
+          <button id="addCasualtyBtn" class="tool-btn flex items-center gap-1">
+            <!-- medical cross icon -->
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="2" width="20" height="20" rx="4" fill="#dc2626"/>
+              <rect x="10.25" y="5" width="3.5" height="14" fill="white"/>
+              <rect x="5" y="10.25" width="14" height="3.5" fill="white"/>
+            </svg>
+          </button>
+
+          <!-- colors -->
+          <div class="flex items-center gap-1.5 pl-2 ml-2 border-l border-[#4a4a4a]">
+            <div class="color-chip selected" data-color="#000000" style="background:#000000"></div>
+            <div class="color-chip" data-color="#60a5fa" style="background:#60a5fa"></div>
+            <div class="color-chip" data-color="#facc15" style="background:#facc15"></div>
+            <div class="color-chip" data-color="#ef4444" style="background:#ef4444"></div>
+            <div class="color-chip" data-color="#22c55e" style="background:#22c55e"></div>
+            <div class="color-chip" data-color="#f97316" style="background:#f97316"></div>
+            <div class="color-chip" data-color="#a78bfa" style="background:#a78bfa"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="bg-[#2a2a2a] border-t border-[#3a3a3a] p-2.5 flex items-center justify-between text-xs">
+      <div class="flex gap-5">
+        <span class="text-gray-300">🚨 Active Incident: Structure Fire</span>
+        <span class="text-gray-300">👥 Personnel: <span id="personnelCount">3</span> Active</span>
+        <span class="text-gray-300">⏱️ Duration: <span id="incidentTime">00:00:00</span></span>
+      </div>
+      <div class="text-yellow-400 font-medium">⚠️ High Temperature Zone Detected</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* --- Data & sidebar --- */
+const firefighters = [
+  { id: 1, name: 'Cpt. DARREN', o2: 85, x: 27, y: 27 },
+  { id: 2, name: 'Pvt. JUDITH', o2: 45, x: 67, y: 27 },
+  { id: 3, name: 'Pvt. BERNICE', o2: 28, x: 27, y: 73 }
+];
+function getO2Color(o2){ if(o2<30) return '#dc2626'; if(o2<50) return '#ef4444'; if(o2<75) return '#eab308'; return '#22c55e'; }
+function initFirefighterList(){
+  const list=document.getElementById('firefighterList');
+  list.innerHTML='';
+  firefighters.forEach(ff=>{
+    const card=document.createElement('div'); 
+    card.className='p-3.5 hover:bg-[#2d2d2d] transition-colors';
+    let o2Class=ff.o2<30?'critical':ff.o2<50?'low':ff.o2<75?'medium':'high';
+    card.innerHTML=`<div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded bg-gradient-to-br from-red-600 to-orange-600 flex items-center justify-center text-lg font-semibold shadow-sm">${ff.id}</div>
+      <div class="flex-1">
+        <div class="font-medium text-sm">${ff.name}</div>
+        <div class="text-xs text-gray-400 mt-1">O₂ Level: ${ff.o2}%</div>
+        <div class="w-full bg-[#1a1a1a] rounded-sm h-1.5 mt-2 border border-[#333]">
+          <div class="o2-bar ${o2Class}" style="width:${ff.o2}%"></div>
+        </div>
+      </div></div>`;
+    list.appendChild(card);
+  });
+}
+function initFirefighterMarkers(){
+  const layer=document.getElementById('locationsLayer');
+  layer.innerHTML='';
+  firefighters.forEach(ff=>{
+    const m=document.createElement('div');
+    m.className='firefighter-marker';
+    m.style.left=`${ff.x}%`;
+    m.style.top=`${ff.y}%`;
+    m.style.background=getO2Color(ff.o2);
+    m.textContent=ff.id;
+    m.title=`${ff.name} - O₂: ${ff.o2}%`;
+    layer.appendChild(m);
+  });
+}
+initFirefighterList();
+initFirefighterMarkers();
+document.getElementById("personnelCount").textContent = firefighters.length;
+
+/* --- Timer --- */
+let sec=0;
+setInterval(()=>{sec++;const h=String(Math.floor(sec/3600)).padStart(2,'0');const m=String(Math.floor((sec%3600)/60)).padStart(2,'0');const s=String(sec%60).padStart(2,'0');document.getElementById("incidentTime").textContent=`${h}:${m}:${s}`;},1000);
+
+/* --- Shared layout helpers for image fit --- */
+const floorplan=document.getElementById("floorplan");
+const mapContainer=document.querySelector(".map-container");
+const heatmapCanvas=document.getElementById("heatmapCanvas");
+const hctx = heatmapCanvas.getContext('2d');
+
+function getImageFitRect(){
+  const containerRect = mapContainer.getBoundingClientRect();
+  const naturalWidth = floorplan.naturalWidth || 1;
+  const naturalHeight = floorplan.naturalHeight || 1;
+  const containerWidth = containerRect.width;
+  const containerHeight = containerRect.height;
+  const imageAspect = naturalWidth / naturalHeight;
+  const containerAspect = containerWidth / containerHeight;
+
+  let displayWidth, displayHeight, offsetX, offsetY;
+  if (imageAspect > containerAspect) {
+    displayWidth = containerWidth;
+    displayHeight = containerWidth / imageAspect;
+    offsetX = 0;
+    offsetY = (containerHeight - displayHeight) / 2;
+  } else {
+    displayHeight = containerHeight;
+    displayWidth = containerHeight * imageAspect;
+    offsetY = 0;
+    offsetX = (containerWidth - displayWidth) / 2;
+  }
+  return {displayWidth, displayHeight, offsetX, offsetY};
+}
+
+/* --- Fixed Start/End draggable markers --- */
+const startMarker = document.getElementById('startMarker');
+const endMarker = document.getElementById('endMarker');
+let dragging = null;
+let dragOffsetX = 0, dragOffsetY = 0;
+let startPoint = null; // normalized [0..1]
+let goalPoint  = null;
+
+[startMarker, endMarker].forEach(marker=>{
+  marker.addEventListener('pointerdown', (e)=>{
+    dragging = marker;
+    const r = marker.getBoundingClientRect();
+    dragOffsetX = e.clientX - r.left;
+    dragOffsetY = e.clientY - r.top;
+    marker.setPointerCapture(e.pointerId);
+  });
+  marker.addEventListener('pointerup', (e)=>{
+    if (!dragging) return;
+    dragging.releasePointerCapture(e.pointerId);
+    dragging = null;
+    const nxny = computeNormalizedForMarker(marker);
+    if (marker === startMarker) startPoint = nxny;
+    else if (marker === endMarker) goalPoint = nxny;
+    if (!nxny) marker.classList.add('invalid'); else marker.classList.remove('invalid');
+  });
+});
+
+mapContainer.addEventListener('pointermove', (e)=>{
+  if (!dragging) return;
+  const containerRect = mapContainer.getBoundingClientRect();
+  let x = e.clientX - containerRect.left - dragOffsetX + dragging.offsetWidth/2;
+  let y = e.clientY - containerRect.top  - dragOffsetY + dragging.offsetHeight/2;
+
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
+
+  x = Math.max(minX, Math.min(maxX, x));
+  y = Math.max(minY, Math.min(maxY, y));
+
+  dragging.style.left = `${x}px`;
+  dragging.style.top  = `${y}px`;
+});
+
+function computeNormalizedForMarker(marker){
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const containerRect = mapContainer.getBoundingClientRect();
+  const markerRect = marker.getBoundingClientRect();
+  const cx = markerRect.left - containerRect.left + markerRect.width/2;
+  const cy = markerRect.top  - containerRect.top + markerRect.height/2;
+
+  if (cx < offsetX || cy < offsetY || cx > offsetX + displayWidth || cy > offsetY + displayHeight) return null;
+  const nx = (cx - offsetX) / displayWidth;
+  const ny = (cy - offsetY) / displayHeight;
+  return [nx, ny];
+}
+
+/* --- Generate / Clear --- */
+document.getElementById("generateBtn").addEventListener("click", async ()=>{
+  if (!startPoint) startPoint = computeNormalizedForMarker(startMarker);
+  if (!goalPoint)  goalPoint  = computeNormalizedForMarker(endMarker);
+
+  if (!startPoint || !goalPoint){
+    alert("Please drag the Start 🚩 and End 🏁 markers onto the floorplan area.");
+    return;
+  }
+  try{
+    const res=await fetch("/run-maze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({start:startPoint,goal:goalPoint})});
+    const data=await res.json();
+    if(data.success){
+      floorplan.src="static/floorplan2.png?cacheBust="+Date.now();
+    }else{
+      alert("⚠️ "+data.error);
+    }
+  }catch(err){
+    alert("❌ Could not reach backend: "+err);
+  }
+});
+
+document.getElementById("clearBtn").addEventListener("click",()=>{
+  // Reset pathfinder
+  startPoint=null; goalPoint=null;
+  startMarker.style.left = '60px'; startMarker.style.top = '60px';
+  endMarker.style.left   = '160px'; endMarker.style.top  = '60px';
+  startMarker.classList.remove('invalid'); endMarker.classList.remove('invalid');
+  floorplan.src="static/floorplan1.png?cacheBust="+Date.now();
+
+  // Clear drawings
+  ctx.clearRect(0,0,annotationCanvas.width,annotationCanvas.height);
+
+  // Remove dynamic markers
+  dynMarkers.forEach(m=>m.el.remove());
+  dynMarkers = [];
+  if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+});
+
+/* --- Annotation Drawing + bottom bar + dynamic markers --- */
+const annotationCanvas=document.getElementById("annotationCanvas");
+const ctx=annotationCanvas.getContext("2d");
+const toggleAnnotationsBtn = document.getElementById('toggleAnnotations');
+const annotationBar = document.getElementById('annotationBar');
+const eraserBtn = document.getElementById('eraserBtn');
+const pencilBtn = document.getElementById('pencilBtn');
+const addFireBtn = document.getElementById('addFireBtn');
+const addCasualtyBtn = document.getElementById('addCasualtyBtn');
+
+let isDrawingEnabled=false, drawing=false, lastX=0,lastY=0, isErasing=false;
+let penColor = "#000000";
+
+function resizeCanvasPreserve(){
+  // Save drawing
+  const temp = document.createElement('canvas');
+  temp.width = annotationCanvas.width; temp.height = annotationCanvas.height;
+  const tctx = temp.getContext('2d'); tctx.drawImage(annotationCanvas, 0, 0);
+
+  // Resize canvases to displayed image size
+  annotationCanvas.width=floorplan.clientWidth; annotationCanvas.height=floorplan.clientHeight;
+  heatmapCanvas.width=floorplan.clientWidth; heatmapCanvas.height=floorplan.clientHeight;
+
+  // Restore drawing
+  ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, annotationCanvas.width, annotationCanvas.height);
+
+  if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+}
+window.addEventListener("resize",resizeCanvasPreserve);
+floorplan.onload = resizeCanvasPreserve;
+setTimeout(resizeCanvasPreserve, 0);
+
+toggleAnnotationsBtn.addEventListener("click",()=>{
+  isDrawingEnabled = !isDrawingEnabled;
+  annotationCanvas.style.display = isDrawingEnabled ? "block" : "none";
+  toggleAnnotationsBtn.classList.toggle('active', isDrawingEnabled);
+  annotationBar.style.display = isDrawingEnabled ? "flex" : "none";
+});
+
+pencilBtn.addEventListener("click", ()=>{
+  isErasing = false;
+  pencilBtn.classList.add('active'); eraserBtn.classList.remove('active');
+});
+eraserBtn.addEventListener("click", ()=>{
+  isErasing = true;
+  eraserBtn.classList.add('active'); pencilBtn.classList.remove('active');
+});
+
+document.querySelectorAll('.color-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.color-chip').forEach(c=>c.classList.remove('selected'));
+    chip.classList.add('selected');
+    penColor = chip.dataset.color || '#ffffff';
+  });
+});
+
+function getCanvasPos(e){
+  const rect=annotationCanvas.getBoundingClientRect();
+  return [e.clientX-rect.left,e.clientY-rect.top];
+}
+function beginStroke(e){
+  if(!isDrawingEnabled) return;
+  drawing=true; [lastX,lastY]=getCanvasPos(e);
+}
+function moveStroke(e){
+  if(!isDrawingEnabled||!drawing) return;
+  const [x,y]=getCanvasPos(e);
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.lineWidth = isErasing ? 18 : 3.5;
+  ctx.globalCompositeOperation = isErasing ? "destination-out" : "source-over";
+  if (!isErasing) ctx.strokeStyle = penColor;
+  ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+  [lastX,lastY]=[x,y];
+}
+function endStroke(){ drawing=false; }
+
+annotationCanvas.addEventListener("mousedown", beginStroke);
+annotationCanvas.addEventListener("mousemove", moveStroke);
+annotationCanvas.addEventListener("mouseup", endStroke);
+annotationCanvas.addEventListener("mouseleave", endStroke);
+annotationCanvas.addEventListener("touchstart",(e)=>{e.preventDefault(); beginStroke(e.touches[0]);},{passive:false});
+annotationCanvas.addEventListener("touchmove",(e)=>{e.preventDefault(); moveStroke(e.touches[0]);},{passive:false});
+annotationCanvas.addEventListener("touchend",endStroke);
+annotationCanvas.addEventListener("touchcancel",endStroke);
+
+/* --- Dynamic markers: create, drag, erase --- */
+let dynMarkers = []; // {el, type:'fire'|'casualty'}
+
+function addDynamicMarker(type){
+  const el = document.createElement('div');
+  el.className = 'dyn-marker';
+  el.dataset.type = type;
+
+  if (type === 'fire'){
+    el.innerHTML = '<span style="font-size:28px">🔥</span>';
+  } else {
+    el.innerHTML = `
+      <svg class="icon-svg" viewBox="0 0 24 24" aria-label="Casualty">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#dc2626"/>
+        <rect x="10.25" y="5" width="3.5" height="14" fill="white"/>
+        <rect x="5" y="10.25" width="14" height="3.5" fill="white"/>
+      </svg>`;
+  }
+
+  // place near center of visible image
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  el.style.left = `${offsetX + displayWidth/2}px`;
+  el.style.top  = `${offsetY + displayHeight/2}px`;
+
+  // drag handling
+  let localDragging=false, lx=0, ly=0;
+  el.addEventListener('pointerdown', (e)=>{
+    // Erase (remove) if eraser tool active
+    if (isErasing){
+      e.preventDefault();
+      el.remove();
+      dynMarkers = dynMarkers.filter(m=>m.el!==el);
+      if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+      return;
+    }
+    localDragging = true;
+    const r = el.getBoundingClientRect();
+    lx = e.clientX - r.left; ly = e.clientY - r.top;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', (e)=>{
+    if (!localDragging) return;
+    const containerRect = mapContainer.getBoundingClientRect();
+    let x = e.clientX - containerRect.left - lx + el.offsetWidth/2;
+    let y = e.clientY - containerRect.top  - ly + el.offsetHeight/2;
+
+    const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+    const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
+
+    x = Math.max(minX, Math.min(maxX, x));
+    y = Math.max(minY, Math.min(maxY, y));
+
+    el.style.left = `${x}px`;
+    el.style.top  = `${y}px`;
+
+    if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+  });
+  el.addEventListener('pointerup', (e)=>{
+    if (!localDragging) return;
+    el.releasePointerCapture(e.pointerId);
+    localDragging = false;
+    if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+  });
+
+  mapContainer.appendChild(el);
+  dynMarkers.push({el, type});
+  if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+}
+
+addFireBtn.addEventListener('click', ()=> addDynamicMarker('fire'));
+addCasualtyBtn.addEventListener('click', ()=> addDynamicMarker('casualty'));
+
+/* --- Locations toggle --- */
+const toggleLocationsBtn = document.getElementById("toggleLocations");
+toggleLocationsBtn.addEventListener("click",()=>{
+  const layer = document.getElementById('locationsLayer');
+  const isOn = toggleLocationsBtn.classList.toggle('active');
+  layer.style.display = isOn ? 'block' : 'none';
+});
+
+/* --- Heat map: contour bands, translucent, clipped; uses ALL fire markers --- */
+const toggleHeatMapBtn = document.getElementById("toggleHeatMap");
+toggleHeatMapBtn.addEventListener("click", ()=>{
+  const active = toggleHeatMapBtn.classList.toggle('active');
+  heatmapCanvas.style.display = active ? 'block' : 'none';
+  if (active) drawHeatmap();
+});
+
+// palette matching the sample style (blue→cyan→purple→magenta→pink→orange→yellow)
+const PALETTE = [
+  '#2a6df2','#2cc9e4','#3e53e5','#7a3fe6','#c934c1','#f24aa8',
+  '#ff6f91','#ff8b57','#ffa63a','#ffc43a','#ffe04a'
+].map(hex=>hexToRGBA(hex, 110)); // semi-translucent
+
+function hexToRGBA(hex, alpha=160){
+  const h = hex.replace('#','');
+  const r = parseInt(h.substring(0,2),16);
+  const g = parseInt(h.substring(2,4),16);
+  const b = parseInt(h.substring(4,6),16);
+  return [r,g,b,alpha];
+}
+
+function seededRand(seed){
+  let s = seed % 2147483647; if (s <= 0) s += 2147483646;
+  return ()=> (s = s * 16807 % 2147483647) / 2147483647;
+}
+
+function getNormalizedXYFromEl(el){
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const containerRect = mapContainer.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const cx = r.left - containerRect.left + r.width/2;
+  const cy = r.top  - containerRect.top + r.height/2;
+  return [(cx - offsetX)/displayWidth, (cy - offsetY)/displayHeight];
+}
+
+function drawHeatmap(){
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const W = heatmapCanvas.width, H = heatmapCanvas.height;
+
+  hctx.clearRect(0,0,W,H);
+  hctx.save();
+  hctx.beginPath();
+  hctx.rect(offsetX, offsetY, displayWidth, displayHeight);
+  hctx.clip();
+
+  // Build sources: all fire dynamic markers; if none, synthesize from low O2; add gentle bumps
+  const sources = [];
+  dynMarkers.filter(m=>m.type==='fire').forEach(m=>{
+    const [nx, ny] = getNormalizedXYFromEl(m.el);
+    if (nx>=0 && nx<=1 && ny>=0 && ny<=1) sources.push({x:nx, y:ny, power:1.0});
+  });
+
+  if (sources.length===0){
+    firefighters.forEach(ff=>{
+      const p = Math.min(1, (100-ff.o2)/100);
+      if (p > 0.15) sources.push({x: ff.x/100, y: ff.y/100, power: 0.5*p});
+    });
+  }
+  
+  // Add baseline and random contours - ensure minimum sources for proper spread
+  sources.push({x:0.5,y:0.5,power:0.18});
+  const rand = seededRand(Math.floor(Date.now()/60000));
+  for (let i=0;i<10;i++){
+    sources.push({x:0.08+0.84*rand(), y:0.08+0.84*rand(), power:0.05+0.10*rand()});
+  }
+
+  // Multi-scale spread - adjusted for single fire marker
+  const baseSigma = Math.max(displayWidth, displayHeight) * 0.16;
+  const inv2s1 = 1/(2*baseSigma*baseSigma);
+  const inv2s2 = 1/(2*(baseSigma*0.55)*(baseSigma*0.55));
+  
+  // Calculate sum power with minimum threshold to prevent division issues
+  const sumPower = Math.max(0.1, sources.reduce((a,s)=>a+s.power,0));
+
+  const step = Math.max(1, Math.floor(Math.min(W,H)/500)); // hi-res
+  const imgData = hctx.createImageData(W, H);
+  const data = imgData.data;
+
+  // Quantized band levels for contour look
+  const LEVELS = 2*PALETTE.length;
+
+  for (let y = Math.floor(offsetY); y < offsetY + displayHeight; y += step){
+    for (let x = Math.floor(offsetX); x < offsetX + displayWidth; x += step){
+      const nx = (x - offsetX) / displayWidth;
+      const ny = (y - offsetY) / displayHeight;
+
+      let v1=0, v2=0;
+      for (const s of sources){
+        const dx = (nx - s.x) * displayWidth;
+        const dy = (ny - s.y) * displayHeight;
+        const d2 = dx*dx + dy*dy;
+        v1 += s.power * Math.exp(-d2 * inv2s1);
+        v2 += s.power * Math.exp(-d2 * inv2s2);
+      }
+      let t = (0.65*v1 + 0.35*v2) / (0.9*sumPower);
+      t = Math.max(0, Math.min(1, t));
+      // banding
+      const band = Math.min(LEVELS-1, Math.floor(t * LEVELS));
+      const [r,g,b,a] = PALETTE[band];
+
+      for (let yy=0; yy<step; yy++){
+        const py = y+yy; if (py<0||py>=H) continue;
+        for (let xx=0; xx<step; xx++){
+          const px = x+xx; if (px<0||px>=W) continue;
+          const idx = (py*W + px)*4;
+          data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = a; // translucent
+        }
+      }
+    }
+  }
+  hctx.putImageData(imgData, 0, 0);
+
+  // Gentle blur to soften band edges a touch
+  hctx.filter = 'blur(2px)';
+  hctx.drawImage(heatmapCanvas, 0, 0);
+  hctx.filter = 'none';
+
+  hctx.restore();
+}
+
+/* Heatmap toggle handled above; duplicate listener removed */
+
+/* --- End other toggles --- */
+</script>
+</body>
+</html>

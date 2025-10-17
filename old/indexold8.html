@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firefighter Situation Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+
+    .map-container {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 140px);
+      background: #1a1a1a;
+      overflow: hidden;
+    }
+
+    #floorplan, #heatmapCanvas, #annotationCanvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
+    }
+
+    #heatmapCanvas { z-index: 3; pointer-events: none; display: none; }
+    #annotationCanvas { z-index: 5; cursor: crosshair; display: none; pointer-events: auto; }
+
+    /* Firefighter marker wrapper (for positioning/drag) */
+    .firefighter-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 44px; height: 44px;             /* slightly larger for clarity */
+      z-index: 11;
+      display: grid; place-items: center;
+      cursor: grab; user-select: none; pointer-events: auto;
+    }
+    .firefighter-marker:active { cursor: grabbing; }
+
+    /* Inner badge that matches sidebar look */
+    .ff-icon {
+      width: 44px; height: 44px; border-radius: 9999px;
+      display:flex; align-items:center; justify-content:center;
+      font-weight: 800; font-size: 18px; color: #fff;
+      background: linear-gradient(135deg, #ef4444 0%, #f59e0b 100%); /* from-red-500 to-orange-600 */
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    }
+    .firefighter-marker:hover .ff-icon { transform: scale(1.04); transition: transform .12s; }
+
+    /* Small popup bubble */
+    .ff-popup {
+      position: absolute;
+      bottom: 54px; /* sits above the badge */
+      left: 50%; transform: translateX(-50%);
+      background: rgba(17, 24, 39, 0.9); /* gray-900 with alpha */
+      color: #fff;
+      padding: 6px 10px;
+      font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      white-space: nowrap;
+      display: none;
+      pointer-events: none; /* popup itself shouldn't grab input */
+      box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    }
+    .ff-popup::after {
+      content: "";
+      position: absolute;
+      top: 100%; left: 50%; transform: translateX(-50%);
+      border-width: 6px; border-style: solid;
+      border-color: rgba(17,24,39,0.9) transparent transparent transparent;
+    }
+
+    .o2-bar { height: 8px; border-radius: 4px; transition: width 0.3s, background 0.3s; }
+    .o2-bar.high { background: #22c55e; }
+    .o2-bar.medium { background: #eab308; }
+    .o2-bar.low { background: #ef4444; }
+    .o2-bar.critical { background: #dc2626; animation: pulse 1s infinite; }
+
+    /* Allow clicking/dragging on location markers */
+    #locationsLayer { z-index: 10; pointer-events: auto; }
+
+    /* Fixed Start/End icon markers */
+    .icon-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 38px; height: 38px;
+      z-index: 20; cursor: grab; user-select: none; pointer-events: auto;
+      display: grid; place-items: center;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.55));
+    }
+    .icon-marker:active { cursor: grabbing; }
+    .icon-emoji { font-size: 30px; line-height: 1; user-select: none; }
+    .icon-svg { width: 30px; height: 30px; display: block; user-select: none; }
+
+    /* Dynamic, erasable markers (fire/casualty) */
+    .dyn-marker { position:absolute; transform:translate(-50%,-50%); width:36px; height:36px;
+      z-index:22; cursor:grab; display:grid; place-items:center; pointer-events:auto;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.55)); }
+    .dyn-marker:active { cursor:grabbing; }
+
+    .toggle-btn.active { background: #2563eb; color: white; }
+    .invalid { box-shadow: 0 0 0 3px #ef444480; }
+
+    /* Bottom translucent annotation bar */
+    #annotationBar {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: 16px; z-index: 30;
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      padding: 10px 12px;
+      display: none;
+      gap: 10px; align-items: center;
+    }
+    .tool-btn {
+      padding: 8px 12px; border-radius: 10px;
+      background: rgba(31, 41, 55, 0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      font-weight: 600;
+    }
+    .tool-btn.active {
+      outline: 2px solid #3b82f6;
+      background: rgba(37, 99, 235, 0.25);
+    }
+    .color-chip {
+      width: 22px; height: 22px; border-radius: 9999px;
+      border: 2px solid rgba(255,255,255,0.65);
+      cursor: pointer;
+    }
+    .color-chip.selected { box-shadow: 0 0 0 3px rgba(59,130,246,0.6); }
+  </style>
+</head>
+
+<body class="bg-gray-900 text-white">
+<div class="flex h-screen">
+  <!-- Sidebar -->
+  <div class="w-80 bg-gray-800 border-r border-gray-700 overflow-y-auto">
+    <div class="p-4 bg-red-600 border-b border-red-700">
+      <h1 class="text-xl font-bold">Firefighter Status</h1>
+      <p class="text-sm text-red-100">Live Monitoring</p>
+    </div>
+    <div id="firefighterList" class="divide-y divide-gray-700"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="flex-1 flex flex-col">
+    <div class="bg-gray-800 border-b border-gray-700 p-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex gap-2 items-center">
+        <button id="toggleLocations" class="toggle-btn px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 active">📍 Locations</button>
+        <button id="toggleHeatMap" class="toggle-btn px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">🔥 Heat Map</button>
+        <button id="toggleAnnotations" class="toggle-btn px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">✏️ Annotations</button>
+      </div>
+      <div class="flex gap-2">
+        <button id="generateBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold">🧩 Generate Path Map</button>
+        <button id="clearBtn" class="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">🧹 Clear</button>
+      </div>
+    </div>
+
+    <!-- Map Area -->
+    <div class="flex-1 relative">
+      <div class="map-container">
+        <img id="floorplan" src="static/floorplan1.png" alt="Floorplan" />
+        <canvas id="heatmapCanvas"></canvas>
+        <canvas id="annotationCanvas"></canvas>
+        <div id="locationsLayer" class="absolute inset-0"></div>
+
+        <!-- Fixed Start/End markers -->
+        <div id="startMarker" class="icon-marker" style="left: 60px; top: 60px;">
+          <span class="icon-emoji" title="Start">🚩</span>
+        </div>
+        <div id="endMarker" class="icon-marker" style="left: 160px; top: 60px;">
+          <span class="icon-emoji" title="End">🏁</span>
+        </div>
+
+        <!-- Bottom translucent annotation toolbar -->
+        <div id="annotationBar" class="flex">
+          <button id="pencilBtn" class="tool-btn active">✏️ Pencil</button>
+          <button id="eraserBtn" class="tool-btn">🧽 Eraser</button>
+
+          <!-- Add markers -->
+          <button id="addFireBtn" class="tool-btn">🔥</button>
+          <button id="addCasualtyBtn" class="tool-btn flex items-center gap-1" title="Add Casualty">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="2" width="20" height="20" rx="4" fill="#dc2626"/>
+              <rect x="10.25" y="5" width="3.5" height="14" fill="white"/>
+              <rect x="5" y="10.25" width="14" height="3.5" fill="white"/>
+            </svg>
+          </button>
+
+          <!-- colors (default black) -->
+          <div class="flex items-center gap-2 pl-2">
+            <div class="color-chip selected" data-color="#000000" style="background:#000000"></div>
+            <div class="color-chip" data-color="#60a5fa" style="background:#60a5fa"></div>
+            <div class="color-chip" data-color="#facc15" style="background:#facc15"></div>
+            <div class="color-chip" data-color="#ef4444" style="background:#ef4444"></div>
+            <div class="color-chip" data-color="#22c55e" style="background:#22c55e"></div>
+            <div class="color-chip" data-color="#ffffff" style="background:#ffffff"></div>
+            <div class="color-chip" data-color="#f97316" style="background:#f97316"></div>
+            <div class="color-chip" data-color="#a78bfa" style="background:#a78bfa"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="bg-gray-800 border-t border-gray-700 p-3 flex items-center justify-between text-sm">
+      <div class="flex gap-6">
+        <span>🚨 Active Incident: Structure Fire</span>
+        <span>👥 Personnel: <span id="personnelCount">3</span> Active</span>
+        <span>⏱️ Duration: <span id="incidentTime">00:00:00</span></span>
+      </div>
+      <div class="text-yellow-400 font-semibold">⚠️ High Temperature Zone Detected</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* --- Data & sidebar --- */
+const firefighters = [
+  { id: 1, name: 'Cpt. DARREN', o2: 85, x: 27, y: 27 },
+  { id: 2, name: 'Pvt. JUDITH', o2: 45, x: 67, y: 27 },
+  { id: 3, name: 'Pvt. BERNICE', o2: 28, x: 27, y: 73 }
+];
+function getO2Color(o2){ if(o2<30) return '#dc2626'; if(o2<50) return '#ef4444'; if(o2<75) return '#eab308'; return '#22c55e'; }
+function initFirefighterList(){
+  const list=document.getElementById('firefighterList');
+  list.innerHTML='';
+  firefighters.forEach(ff=>{
+    const card=document.createElement('div');
+    card.className='p-4 hover:bg-gray-750';
+    let o2Class=ff.o2<30?'critical':ff.o2<50?'low':ff.o2<75?'medium':'high';
+    card.innerHTML=`<div class="flex items-center gap-3">
+      <div class="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-xl font-bold">${ff.id}</div>
+      <div class="flex-1">
+        <div class="font-semibold">${ff.name}</div>
+        <div class="text-sm text-gray-400 mt-1">O₂ Level: ${ff.o2}%</div>
+        <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
+          <div class="o2-bar ${o2Class}" style="width:${ff.o2}%"></div>
+        </div>
+      </div></div>`;
+    list.appendChild(card);
+  });
+}
+initFirefighterList();
+document.getElementById("personnelCount").textContent = firefighters.length;
+
+/* --- Timer --- */
+let sec=0;
+setInterval(()=>{sec++;const h=String(Math.floor(sec/3600)).padStart(2,'0');const m=String(Math.floor((sec%3600)/60)).padStart(2,'0');const s=String(sec%60).padStart(2,'0');document.getElementById("incidentTime").textContent=`${h}:${m}:${s}`;},1000);
+
+/* --- Shared layout helpers for image fit --- */
+const floorplan=document.getElementById("floorplan");
+const mapContainer=document.querySelector(".map-container");
+const heatmapCanvas=document.getElementById("heatmapCanvas");
+const hctx = heatmapCanvas.getContext('2d');
+
+function getImageFitRect(){
+  const containerRect = mapContainer.getBoundingClientRect();
+  const naturalWidth = floorplan.naturalWidth || 1;
+  const naturalHeight = floorplan.naturalHeight || 1;
+  const containerWidth = containerRect.width;
+  const containerHeight = containerRect.height;
+  const imageAspect = naturalWidth / naturalHeight;
+  const containerAspect = containerWidth / containerHeight;
+
+  let displayWidth, displayHeight, offsetX, offsetY;
+  if (imageAspect > containerAspect) {
+    displayWidth = containerWidth;
+    displayHeight = containerWidth / imageAspect;
+    offsetX = 0;
+    offsetY = (containerHeight - displayHeight) / 2;
+  } else {
+    displayHeight = containerHeight;
+    displayWidth = containerHeight * imageAspect;
+    offsetY = 0;
+    offsetX = (containerWidth - displayWidth) / 2;
+  }
+  return {displayWidth, displayHeight, offsetX, offsetY};
+}
+
+/* --- Fixed Start/End draggable markers --- */
+const startMarker = document.getElementById('startMarker');
+const endMarker = document.getElementById('endMarker');
+let dragging = null;
+let dragOffsetX = 0, dragOffsetY = 0;
+let startPoint = null; // normalized [0..1]
+let goalPoint  = null;
+
+[startMarker, endMarker].forEach(marker=>{
+  marker.addEventListener('pointerdown', (e)=>{
+    dragging = marker;
+    const r = marker.getBoundingClientRect();
+    dragOffsetX = e.clientX - r.left;
+    dragOffsetY = e.clientY - r.top;
+    marker.setPointerCapture(e.pointerId);
+  });
+  marker.addEventListener('pointerup', (e)=>{
+    if (!dragging) return;
+    dragging.releasePointerCapture(e.pointerId);
+    dragging = null;
+    const nxny = computeNormalizedForMarker(marker);
+    if (marker === startMarker) startPoint = nxny;
+    else if (marker === endMarker) goalPoint = nxny;
+    if (!nxny) marker.classList.add('invalid'); else marker.classList.remove('invalid');
+  });
+});
+
+mapContainer.addEventListener('pointermove', (e)=>{
+  if (!dragging) return;
+  const containerRect = mapContainer.getBoundingClientRect();
+  let x = e.clientX - containerRect.left - dragOffsetX + dragging.offsetWidth/2;
+  let y = e.clientY - containerRect.top  - dragOffsetY + dragging.offsetHeight/2;
+
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
+
+  x = Math.max(minX, Math.min(maxX, x));
+  y = Math.max(minY, Math.min(maxY, y));
+
+  dragging.style.left = `${x}px`;
+  dragging.style.top  = `${y}px`;
+});
+
+function computeNormalizedForMarker(marker){
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const containerRect = mapContainer.getBoundingClientRect();
+  const markerRect = marker.getBoundingClientRect();
+  const cx = markerRect.left - containerRect.left + markerRect.width/2;
+  const cy = markerRect.top  - containerRect.top + markerRect.height/2;
+
+  if (cx < offsetX || cy < offsetY || cx > offsetX + displayWidth || cy > offsetY + displayHeight) return null;
+  const nx = (cx - offsetX) / displayWidth;
+  const ny = (cy - offsetY) / displayHeight;
+  return [nx, ny];
+}
+
+/* --- Generate / Clear --- */
+document.getElementById("generateBtn").addEventListener("click", async ()=>{
+  if (!startPoint) startPoint = computeNormalizedForMarker(startMarker);
+  if (!goalPoint)  goalPoint  = computeNormalizedForMarker(endMarker);
+
+  if (!startPoint || !goalPoint){
+    alert("Please drag the Start 🚩 and End 🏁 markers onto the floorplan area.");
+    return;
+  }
+  try{
+    const res=await fetch("/run-maze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({start:startPoint,goal:goalPoint})});
+    const data=await res.json();
+    if(data.success){
+      floorplan.src="static/floorplan2.png?cacheBust="+Date.now();
+    }else{
+      alert("⚠️ "+data.error);
+    }
+  }catch(err){
+    alert("❌ Could not reach backend: "+err);
+  }
+});
+
+document.getElementById("clearBtn").addEventListener("click",()=>{
+  startPoint=null; goalPoint=null;
+  startMarker.style.left = '60px'; startMarker.style.top = '60px';
+  endMarker.style.left   = '160px'; endMarker.style.top  = '60px';
+  startMarker.classList.remove('invalid'); endMarker.classList.remove('invalid');
+  floorplan.src="static/floorplan1.png?cacheBust="+Date.now();
+
+  ctx.clearRect(0,0,annotationCanvas.width,annotationCanvas.height);
+
+  // Remove dynamic markers
+  dynMarkers.forEach(m=>m.el.remove());
+  dynMarkers = [];
+  if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+});
+
+/* --- Annotation Drawing + bottom bar + dynamic markers --- */
+const annotationCanvas=document.getElementById("annotationCanvas");
+const ctx=annotationCanvas.getContext("2d");
+const toggleAnnotationsBtn = document.getElementById('toggleAnnotations');
+const annotationBar = document.getElementById('annotationBar');
+const eraserBtn = document.getElementById('eraserBtn');
+const pencilBtn = document.getElementById('pencilBtn');
+const addFireBtn = document.getElementById('addFireBtn');
+const addCasualtyBtn = document.getElementById('addCasualtyBtn');
+
+let isDrawingEnabled=false, drawing=false, lastX=0,lastY=0, isErasing=false;
+let penColor = "#000000"; // default black
+
+function resizeCanvasPreserve(){
+  const temp = document.createElement('canvas');
+  temp.width = annotationCanvas.width; temp.height = annotationCanvas.height;
+  const tctx = temp.getContext('2d'); tctx.drawImage(annotationCanvas, 0, 0);
+
+  annotationCanvas.width=floorplan.clientWidth; annotationCanvas.height=floorplan.clientHeight;
+  heatmapCanvas.width=floorplan.clientWidth; heatmapCanvas.height=floorplan.clientHeight;
+
+  ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, annotationCanvas.width, annotationCanvas.height);
+
+  if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+}
+window.addEventListener("resize",resizeCanvasPreserve);
+floorplan.onload = resizeCanvasPreserve;
+setTimeout(resizeCanvasPreserve, 0);
+
+toggleAnnotationsBtn.addEventListener("click",()=>{
+  isDrawingEnabled = !isDrawingEnabled;
+  annotationCanvas.style.display = isDrawingEnabled ? "block" : "none";
+  toggleAnnotationsBtn.classList.toggle('active', isDrawingEnabled);
+  annotationBar.style.display = isDrawingEnabled ? "flex" : "none";
+});
+
+pencilBtn.addEventListener("click", ()=>{
+  isErasing = false;
+  pencilBtn.classList.add('active'); eraserBtn.classList.remove('active');
+});
+eraserBtn.addEventListener("click", ()=>{
+  isErasing = true;
+  eraserBtn.classList.add('active'); pencilBtn.classList.remove('active');
+});
+
+document.querySelectorAll('.color-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.color-chip').forEach(c=>c.classList.remove('selected'));
+    chip.classList.add('selected');
+    penColor = chip.dataset.color || '#000000';
+  });
+});
+
+function getCanvasPos(e){
+  const rect=annotationCanvas.getBoundingClientRect();
+  return [e.clientX-rect.left,e.clientY-rect.top];
+}
+function beginStroke(e){
+  if(!isDrawingEnabled) return;
+  drawing=true; [lastX,lastY]=getCanvasPos(e);
+}
+function moveStroke(e){
+  if(!isDrawingEnabled||!drawing) return;
+  const [x,y]=getCanvasPos(e);
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.lineWidth = isErasing ? 18 : 3.5;
+  ctx.globalCompositeOperation = isErasing ? "destination-out" : "source-over";
+  if (!isErasing) ctx.strokeStyle = penColor;
+  ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+  [lastX,lastY]=[x,y];
+}
+function endStroke(){ drawing=false; }
+
+annotationCanvas.addEventListener("mousedown", beginStroke);
+annotationCanvas.addEventListener("mousemove", moveStroke);
+annotationCanvas.addEventListener("mouseup", endStroke);
+annotationCanvas.addEventListener("mouseleave", endStroke);
+annotationCanvas.addEventListener("touchstart",(e)=>{e.preventDefault(); beginStroke(e.touches[0]);},{passive:false});
+annotationCanvas.addEventListener("touchmove",(e)=>{e.preventDefault(); moveStroke(e.touches[0]);},{passive:false});
+annotationCanvas.addEventListener("touchend",endStroke);
+annotationCanvas.addEventListener("touchcancel",endStroke);
+
+/* --- Dynamic markers: create, drag, erase --- */
+let dynMarkers = []; // {el, type:'fire'|'casualty'}
+
+function addDynamicMarker(type){
+  const el = document.createElement('div');
+  el.className = 'dyn-marker';
+  el.dataset.type = type;
+
+  if (type === 'fire'){
+    el.innerHTML = '<span style="font-size:28px">🔥</span>';
+  } else {
+    el.innerHTML = `
+      <svg class="icon-svg" viewBox="0 0 24 24" aria-label="Casualty">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#dc2626"/>
+        <rect x="10.25" y="5" width="3.5" height="14" fill="white"/>
+        <rect x="5" y="10.25" width="14" height="3.5" fill="white"/>
+      </svg>`;
+  }
+
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  el.style.left = `${offsetX + displayWidth/2}px`;
+  el.style.top  = `${offsetY + displayHeight/2}px`;
+
+  let localDragging=false, lx=0, ly=0;
+  el.addEventListener('pointerdown', (e)=>{
+    if (isErasing){
+      e.preventDefault();
+      el.remove();
+      dynMarkers = dynMarkers.filter(m=>m.el!==el);
+      if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+      return;
+    }
+    localDragging = true;
+    const r = el.getBoundingClientRect();
+    lx = e.clientX - r.left; ly = e.clientY - r.top;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', (e)=>{
+    if (!localDragging) return;
+    const containerRect = mapContainer.getBoundingClientRect();
+    let x = e.clientX - containerRect.left - lx + el.offsetWidth/2;
+    let y = e.clientY - containerRect.top  - ly + el.offsetHeight/2;
+
+    const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+    const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
+
+    x = Math.max(minX, Math.min(maxX, x));
+    y = Math.max(minY, Math.min(maxY, y));
+
+    el.style.left = `${x}px`;
+    el.style.top  = `${y}px`;
+
+    if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+  });
+  el.addEventListener('pointerup', (e)=>{
+    if (!localDragging) return;
+    el.releasePointerCapture(e.pointerId);
+    localDragging = false;
+    if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+  });
+
+  mapContainer.appendChild(el);
+  dynMarkers.push({el, type});
+  if (heatmapCanvas.style.display !== 'none') drawHeatmap();
+}
+
+addFireBtn.addEventListener('click', ()=> addDynamicMarker('fire'));
+addCasualtyBtn.addEventListener('click', ()=> addDynamicMarker('casualty'));
+
+/* --- Firefighter Markers on Map: create, popup toggle, drag --- */
+const locationsLayer = document.getElementById('locationsLayer');
+function initFirefighterMarkers(){
+  locationsLayer.innerHTML='';
+  firefighters.forEach(ff=>{
+    const marker = document.createElement('div');
+    marker.className = 'firefighter-marker';
+    marker.style.left = `${ff.x}%`;
+    marker.style.top  = `${ff.y}%`;
+
+    // inner badge (matches sidebar)
+    const badge = document.createElement('div');
+    badge.className = 'ff-icon';
+    badge.textContent = ff.id;
+    marker.appendChild(badge);
+
+    // popup
+    const popup = document.createElement('div');
+    popup.className = 'ff-popup';
+    popup.textContent = `${ff.name} — O₂ ${ff.o2}%`;
+    marker.appendChild(popup);
+
+    // toggle popup on click (simple toggle)
+    let clickStart = null; // to detect drag vs click
+    marker.addEventListener('pointerdown', (e)=>{
+      // start dragging
+      const r = marker.getBoundingClientRect();
+      const containerRect = mapContainer.getBoundingClientRect();
+      const ox = e.clientX - r.left, oy = e.clientY - r.top;
+      clickStart = {x:e.clientX, y:e.clientY};
+      marker.setPointerCapture(e.pointerId);
+
+      function move(ev){
+        const dx = Math.abs(ev.clientX - clickStart.x);
+        const dy = Math.abs(ev.clientY - clickStart.y);
+        const dragging = dx > 3 || dy > 3;
+
+        let x = ev.clientX - containerRect.left - ox + marker.offsetWidth/2;
+        let y = ev.clientY - containerRect.top  - oy + marker.offsetHeight/2;
+
+        const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+        const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
+
+        x = Math.max(minX, Math.min(maxX, x));
+        y = Math.max(minY, Math.min(maxY, y));
+
+        marker.style.left = `${x}px`;
+        marker.style.top  = `${y}px`;
+
+        // update normalized % (so if you persist later, it's ready)
+        ff.x = ((x - offsetX) / displayWidth) * 100;
+        ff.y = ((y - offsetY) / displayHeight) * 100;
+
+        if (dragging) popup.style.display = 'none'; // hide popup while dragging
+      }
+      function up(ev){
+        marker.releasePointerCapture(ev.pointerId);
+        marker.removeEventListener('pointermove', move);
+        marker.removeEventListener('pointerup', up);
+
+        // treat as click if not dragged much
+        const totalDx = Math.abs(ev.clientX - clickStart.x);
+        const totalDy = Math.abs(ev.clientY - clickStart.y);
+        if (totalDx <= 3 && totalDy <= 3){
+          popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
+        }
+      }
+      marker.addEventListener('pointermove', move);
+      marker.addEventListener('pointerup', up);
+    });
+
+    locationsLayer.appendChild(marker);
+  });
+}
+initFirefighterMarkers();
+
+/* --- Locations toggle --- */
+const toggleLocationsBtn = document.getElementById("toggleLocations");
+toggleLocationsBtn.addEventListener("click",()=>{
+  const isOn = toggleLocationsBtn.classList.toggle('active');
+  locationsLayer.style.display = isOn ? 'block' : 'none';
+});
+
+/* --- Heat map: contour bands (uses ONLY fire markers; kept from previous version) --- */
+const toggleHeatMapBtn = document.getElementById("toggleHeatMap");
+toggleHeatMapBtn.addEventListener("click", ()=>{
+  const active = toggleHeatMapBtn.classList.toggle('active');
+  heatmapCanvas.style.display = active ? 'block' : 'none';
+  if (active) drawHeatmap();
+});
+
+// palette (alpha currently 110; adjust if you want 120)
+const PALETTE = [
+  '#2a6df2','#2cc9e4','#3e53e5','#7a3fe6','#c934c1','#f24aa8',
+  '#ff6f91','#ff8b57','#ffa63a','#ffc43a','#ffe04a'
+].map(hex=>hexToRGBA(hex, 110));
+
+function hexToRGBA(hex, alpha=160){
+  const h = hex.replace('#','');
+  const r = parseInt(h.substring(0,2),16);
+  const g = parseInt(h.substring(2,4),16);
+  const b = parseInt(h.substring(4,6),16);
+  return [r,g,b,alpha];
+}
+
+function seededRand(seed){
+  let s = seed % 2147483647; if (s <= 0) s += 2147483646;
+  return ()=> (s = s * 16807 % 2147483647) / 2147483647;
+}
+
+function getNormalizedXYFromEl(el){
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const containerRect = mapContainer.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const cx = r.left - containerRect.left + r.width/2;
+  const cy = r.top  - containerRect.top + r.height/2;
+  return [(cx - offsetX)/displayWidth, (cy - offsetY)/displayHeight];
+}
+
+function drawHeatmap(){
+  const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+  const W = heatmapCanvas.width, H = heatmapCanvas.height;
+
+  hctx.clearRect(0,0,W,H);
+  hctx.save();
+  hctx.beginPath();
+  hctx.rect(offsetX, offsetY, displayWidth, displayHeight);
+  hctx.clip();
+
+  // Sources: ONLY fire markers
+  const sources = [];
+  dynMarkers.filter(m=>m.type==='fire').forEach(m=>{
+    const [nx, ny] = getNormalizedXYFromEl(m.el);
+    if (nx>=0 && nx<=1 && ny>=0 && ny<=1) sources.push({x:nx, y:ny, power:1.0});
+  });
+
+  // Baseline + random contours so it still shows when 0 fires
+  sources.push({x:0.5,y:0.5,power:0.15});
+  const rand = seededRand(Math.floor(Date.now()/60000));
+  for (let i=0;i<10;i++){
+    sources.push({x:0.08+0.84*rand(), y:0.08+0.84*rand(), power:0.05+0.10*rand()});
+  }
+
+  const baseSigma = Math.max(displayWidth, displayHeight) * 0.16;
+  const inv2s1 = 1/(2*baseSigma*baseSigma);
+  const inv2s2 = 1/(2*(baseSigma*0.55)*(baseSigma*0.55));
+  const sumPower = sources.reduce((a,s)=>a+s.power,0)+1e-6;
+
+  const step = Math.max(1, Math.floor(Math.min(W,H)/500));
+  const imgData = hctx.createImageData(W, H);
+  const data = imgData.data;
+
+  const LEVELS = PALETTE.length;
+
+  for (let y = Math.floor(offsetY); y < offsetY + displayHeight; y += step){
+    for (let x = Math.floor(offsetX); x < offsetX + displayWidth; x += step){
+      const nx = (x - offsetX) / displayWidth;
+      const ny = (y - offsetY) / displayHeight;
+
+      let v1=0, v2=0;
+      for (const s of sources){
+        const dx = (nx - s.x) * displayWidth;
+        const dy = (ny - s.y) * displayHeight;
+        const d2 = dx*dx + dy*dy;
+        v1 += s.power * Math.exp(-d2 * inv2s1);
+        v2 += s.power * Math.exp(-d2 * inv2s2);
+      }
+      let t = (0.65*v1 + 0.35*v2) / (0.9*sumPower);
+      t = Math.max(0, Math.min(1, t));
+
+      const band = Math.min(LEVELS-1, Math.floor(t * LEVELS));
+      const [r,g,b,a] = PALETTE[band];
+
+      for (let yy=0; yy<step; yy++){
+        const py = y+yy; if (py<0||py>=H) continue;
+        for (let xx=0; xx<step; xx++){
+          const px = x+xx; if (px<0||px>=W) continue;
+          const idx = (py*W + px)*4;
+          data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = a;
+        }
+      }
+    }
+  }
+  hctx.putImageData(imgData, 0, 0);
+
+  hctx.filter = 'blur(2px)';
+  hctx.drawImage(heatmapCanvas, 0, 0);
+  hctx.filter = 'none';
+
+  hctx.restore();
+}
+</script>
+</body>
+</html>
