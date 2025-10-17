@@ -36,7 +36,9 @@
       color: white; font-weight: bold; font-size: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
       transition: transform 0.2s;
-      pointer-events: auto;
+      pointer-events: auto; /* now draggable */
+      z-index: 11;
+      background: #22c55e;
     }
     .firefighter-marker:hover { transform: translate(-50%, -50%) scale(1.12); }
 
@@ -46,7 +48,7 @@
     .o2-bar.low { background: #ef4444; }
     .o2-bar.critical { background: #dc2626; animation: pulse 1s infinite; }
 
-    #locationsLayer { z-index: 10; pointer-events: none; }
+    #locationsLayer { z-index: 10; pointer-events: auto; } /* enable dragging */
 
     /* Fixed Start/End icon markers */
     .icon-marker {
@@ -92,6 +94,15 @@
       outline: 2px solid #3b82f6;
       background: rgba(37, 99, 235, 0.25);
     }
+
+    /* Icon-only toolbar buttons (no box/label) */
+    .icon-only {
+      background: transparent; border: none; padding: 4px; margin: 0 2px;
+      width: 32px; height: 32px; display:grid; place-items:center; border-radius: 8px;
+      cursor: pointer;
+    }
+    .icon-only:hover { background: rgba(255,255,255,0.08); }
+
     .color-chip {
       width: 22px; height: 22px; border-radius: 9999px;
       border: 2px solid rgba(255,255,255,0.65);
@@ -147,24 +158,24 @@
           <button id="pencilBtn" class="tool-btn active">✏️ Pencil</button>
           <button id="eraserBtn" class="tool-btn">🧽 Eraser</button>
 
-          <!-- Add markers -->
-          <button id="addFireBtn" class="tool-btn">🔥</button>
-          <button id="addCasualtyBtn" class="tool-btn flex items-center gap-1">
-            <!-- medical cross icon -->
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <!-- icon-only marker adders -->
+          <button id="addFireBtn" class="icon-only" title="Add Fire">🔥</button>
+          <button id="addCasualtyBtn" class="icon-only" title="Add Casualty">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="2" y="2" width="20" height="20" rx="4" fill="#dc2626"/>
               <rect x="10.25" y="5" width="3.5" height="14" fill="white"/>
               <rect x="5" y="10.25" width="14" height="3.5" fill="white"/>
             </svg>
           </button>
 
-          <!-- colors -->
+          <!-- colors (default = black) -->
           <div class="flex items-center gap-2 pl-2">
             <div class="color-chip selected" data-color="#000000" style="background:#000000"></div>
             <div class="color-chip" data-color="#60a5fa" style="background:#60a5fa"></div>
             <div class="color-chip" data-color="#facc15" style="background:#facc15"></div>
             <div class="color-chip" data-color="#ef4444" style="background:#ef4444"></div>
             <div class="color-chip" data-color="#22c55e" style="background:#22c55e"></div>
+            <div class="color-chip" data-color="#ffffff" style="background:#ffffff"></div>
             <div class="color-chip" data-color="#f97316" style="background:#f97316"></div>
             <div class="color-chip" data-color="#a78bfa" style="background:#a78bfa"></div>
           </div>
@@ -223,6 +234,35 @@ function initFirefighterMarkers(){
     m.textContent=ff.id;
     m.title=`${ff.name} - O₂: ${ff.o2}%`;
     layer.appendChild(m);
+
+    // Dragging for firefighter markers
+    let drag=false, ox=0, oy=0;
+    m.addEventListener('pointerdown', (e)=>{
+      drag=true;
+      const r=m.getBoundingClientRect();
+      ox=e.clientX-r.left; oy=e.clientY-r.top;
+      m.setPointerCapture(e.pointerId);
+    });
+    m.addEventListener('pointermove', (e)=>{
+      if(!drag) return;
+      const containerRect = mapContainer.getBoundingClientRect();
+      let x = e.clientX - containerRect.left - ox + m.offsetWidth/2;
+      let y = e.clientY - containerRect.top  - oy + m.offsetHeight/2;
+      const {displayWidth, displayHeight, offsetX, offsetY} = getImageFitRect();
+      const minX = offsetX, minY = offsetY, maxX = offsetX + displayWidth, maxY = offsetY + displayHeight;
+      x = Math.max(minX, Math.min(maxX, x));
+      y = Math.max(minY, Math.min(maxY, y));
+      m.style.left = `${x}px`;
+      m.style.top  = `${y}px`;
+      // Update normalized %
+      ff.x = ((x - offsetX) / displayWidth) * 100;
+      ff.y = ((y - offsetY) / displayHeight) * 100;
+    });
+    m.addEventListener('pointerup', (e)=>{
+      if(!drag) return;
+      m.releasePointerCapture(e.pointerId);
+      drag=false;
+    });
   });
 }
 initFirefighterList();
@@ -369,6 +409,7 @@ const addFireBtn = document.getElementById('addFireBtn');
 const addCasualtyBtn = document.getElementById('addCasualtyBtn');
 
 let isDrawingEnabled=false, drawing=false, lastX=0,lastY=0, isErasing=false;
+/* default pencil = black */
 let penColor = "#000000";
 
 function resizeCanvasPreserve(){
@@ -410,7 +451,7 @@ document.querySelectorAll('.color-chip').forEach(chip=>{
   chip.addEventListener('click', ()=>{
     document.querySelectorAll('.color-chip').forEach(c=>c.classList.remove('selected'));
     chip.classList.add('selected');
-    penColor = chip.dataset.color || '#ffffff';
+    penColor = chip.dataset.color || '#000000';
   });
 });
 
@@ -467,10 +508,9 @@ function addDynamicMarker(type){
   el.style.left = `${offsetX + displayWidth/2}px`;
   el.style.top  = `${offsetY + displayHeight/2}px`;
 
-  // drag handling
+  // drag handling + erase-on-eraser
   let localDragging=false, lx=0, ly=0;
   el.addEventListener('pointerdown', (e)=>{
-    // Erase (remove) if eraser tool active
     if (isErasing){
       e.preventDefault();
       el.remove();
@@ -523,7 +563,7 @@ toggleLocationsBtn.addEventListener("click",()=>{
   layer.style.display = isOn ? 'block' : 'none';
 });
 
-/* --- Heat map: contour bands, translucent, clipped; uses ALL fire markers --- */
+/* --- Heat map: contour bands, translucent, clipped; uses ONLY FIRE markers --- */
 const toggleHeatMapBtn = document.getElementById("toggleHeatMap");
 toggleHeatMapBtn.addEventListener("click", ()=>{
   const active = toggleHeatMapBtn.classList.toggle('active');
@@ -531,11 +571,11 @@ toggleHeatMapBtn.addEventListener("click", ()=>{
   if (active) drawHeatmap();
 });
 
-// palette matching the sample style (blue→cyan→purple→magenta→pink→orange→yellow)
+// palette (alpha = 120 as requested)
 const PALETTE = [
   '#2a6df2','#2cc9e4','#3e53e5','#7a3fe6','#c934c1','#f24aa8',
   '#ff6f91','#ff8b57','#ffa63a','#ffc43a','#ffe04a'
-].map(hex=>hexToRGBA(hex, 110)); // semi-translucent
+].map(hex=>hexToRGBA(hex, 120)); // <- 120 alpha
 
 function hexToRGBA(hex, alpha=160){
   const h = hex.replace('#','');
@@ -569,21 +609,15 @@ function drawHeatmap(){
   hctx.rect(offsetX, offsetY, displayWidth, displayHeight);
   hctx.clip();
 
-  // Build sources: all fire dynamic markers; if none, synthesize from low O2; add gentle bumps
+  // Sources: ONLY fire dynamic markers
   const sources = [];
   dynMarkers.filter(m=>m.type==='fire').forEach(m=>{
     const [nx, ny] = getNormalizedXYFromEl(m.el);
     if (nx>=0 && nx<=1 && ny>=0 && ny<=1) sources.push({x:nx, y:ny, power:1.0});
   });
 
-  if (sources.length===0){
-    firefighters.forEach(ff=>{
-      const p = Math.min(1, (100-ff.o2)/100);
-      if (p > 0.15) sources.push({x: ff.x/100, y: ff.y/100, power: 0.5*p});
-    });
-  }
-  // Even baseline + random contours
-  sources.push({x:0.5,y:0.5,power:0.18});
+  // Even baseline + random contours (so you still see soft bands even with 0 fires)
+  sources.push({x:0.5,y:0.5,power:0.15});
   const rand = seededRand(Math.floor(Date.now()/60000));
   for (let i=0;i<10;i++){
     sources.push({x:0.08+0.84*rand(), y:0.08+0.84*rand(), power:0.05+0.10*rand()});
@@ -599,8 +633,7 @@ function drawHeatmap(){
   const imgData = hctx.createImageData(W, H);
   const data = imgData.data;
 
-  // Quantized band levels for contour look
-  const LEVELS = 2*PALETTE.length;
+  const LEVELS = PALETTE.length;
 
   for (let y = Math.floor(offsetY); y < offsetY + displayHeight; y += step){
     for (let x = Math.floor(offsetX); x < offsetX + displayWidth; x += step){
@@ -617,7 +650,6 @@ function drawHeatmap(){
       }
       let t = (0.65*v1 + 0.35*v2) / (0.9*sumPower);
       t = Math.max(0, Math.min(1, t));
-      // banding
       const band = Math.min(LEVELS-1, Math.floor(t * LEVELS));
       const [r,g,b,a] = PALETTE[band];
 
@@ -626,14 +658,14 @@ function drawHeatmap(){
         for (let xx=0; xx<step; xx++){
           const px = x+xx; if (px<0||px>=W) continue;
           const idx = (py*W + px)*4;
-          data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = a; // translucent
+          data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = a;
         }
       }
     }
   }
   hctx.putImageData(imgData, 0, 0);
 
-  // Gentle blur to soften band edges a touch
+  // Soft edge
   hctx.filter = 'blur(2px)';
   hctx.drawImage(heatmapCanvas, 0, 0);
   hctx.filter = 'none';
@@ -641,9 +673,13 @@ function drawHeatmap(){
   hctx.restore();
 }
 
-/* Heatmap toggle handled above; duplicate listener removed */
-
-/* --- End other toggles --- */
+/* --- Heatmap toggle --- */
+if (typeof toggleHeatMapBtn !== 'undefined' && toggleHeatMapBtn !== null) {
+  toggleHeatMapBtn.addEventListener("click", ()=>{
+    const active = toggleHeatMapBtn.classList.contains('active');
+    if (active) drawHeatmap();
+  });
+}
 </script>
 </body>
 </html>

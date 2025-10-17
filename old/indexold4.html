@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firefighter Situation Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+
+    .map-container {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 140px);
+      background: #1a1a1a;
+      overflow: hidden;
+    }
+
+    #floorplan, #annotationCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
+    }
+
+    #annotationCanvas {
+      z-index: 5;
+      cursor: crosshair;
+      display: none;
+    }
+
+    .firefighter-marker {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      transition: all 0.3s;
+    }
+
+    .firefighter-marker:hover {
+      transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    .o2-bar { height: 8px; border-radius: 4px; transition: width 0.3s, background 0.3s; }
+    .o2-bar.high { background: #22c55e; }
+    .o2-bar.medium { background: #eab308; }
+    .o2-bar.low { background: #ef4444; }
+    .o2-bar.critical { background: #dc2626; animation: pulse 1s infinite; }
+
+    #locationsLayer {
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .path-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid white;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 20;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-900 text-white">
+<div class="flex h-screen">
+  <!-- Sidebar -->
+  <div class="w-80 bg-gray-800 border-r border-gray-700 overflow-y-auto">
+    <div class="p-4 bg-red-600 border-b border-red-700">
+      <h1 class="text-xl font-bold">Firefighter Status</h1>
+      <p class="text-sm text-red-100">Live Monitoring</p>
+    </div>
+    <div id="firefighterList" class="divide-y divide-gray-700"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="flex-1 flex flex-col">
+    <div class="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+      <div class="flex gap-2">
+        <button id="toggleLocations" class="toggle-btn px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 active">📍 Locations</button>
+        <button id="toggleHeatMap" class="toggle-btn px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">🔥 Heat Map</button>
+        <button id="toggleAnnotations" class="toggle-btn px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">✏️ Annotations</button>
+      </div>
+      <div class="flex gap-2">
+        <button id="generateBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold">
+          🧩 Generate Path Map
+        </button>
+        <button id="clearBtn" class="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">🧹 Clear</button>
+      </div>
+    </div>
+
+    <!-- Map Area -->
+    <div class="flex-1 relative">
+      <div class="map-container">
+        <img id="floorplan" src="static/floorplan1.png" alt="Floorplan" />
+        <canvas id="annotationCanvas"></canvas>
+        <div id="locationsLayer" class="absolute inset-0"></div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="bg-gray-800 border-t border-gray-700 p-3 flex items-center justify-between text-sm">
+      <div class="flex gap-6">
+        <span>🚨 Active Incident: Structure Fire</span>
+        <span>👥 Personnel: <span id="personnelCount">3</span> Active</span>
+        <span>⏱️ Duration: <span id="incidentTime">00:00:00</span></span>
+      </div>
+      <div class="text-yellow-400 font-semibold">⚠️ High Temperature Zone Detected</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const firefighters = [
+  { id: 1, name: 'Cpt. DARREN', o2: 85, x: 27, y: 27 },
+  { id: 2, name: 'Pvt. JUDITH', o2: 45, x: 67, y: 27 },
+  { id: 3, name: 'Pvt. BERNICE', o2: 28, x: 27, y: 73 }
+];
+function getO2Color(o2){ if(o2<30) return '#dc2626'; if(o2<50) return '#ef4444'; if(o2<75) return '#eab308'; return '#22c55e'; }
+
+function initFirefighterList(){
+  const list=document.getElementById('firefighterList');
+  list.innerHTML='';
+  firefighters.forEach(ff=>{
+    const card=document.createElement('div'); 
+    card.className='p-4 hover:bg-gray-750';
+    let o2Class=ff.o2<30?'critical':ff.o2<50?'low':ff.o2<75?'medium':'high';
+    card.innerHTML=`<div class="flex items-center gap-3">
+      <div class="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-xl font-bold">${ff.id}</div>
+      <div class="flex-1">
+        <div class="font-semibold">${ff.name}</div>
+        <div class="text-sm text-gray-400 mt-1">O₂ Level: ${ff.o2}%</div>
+        <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
+          <div class="o2-bar ${o2Class}" style="width:${ff.o2}%"></div>
+        </div>
+      </div></div>`;
+    list.appendChild(card);
+  });
+}
+
+function initFirefighterMarkers(){
+  const layer=document.getElementById('locationsLayer');
+  layer.innerHTML='';
+  firefighters.forEach(ff=>{
+    const m=document.createElement('div');
+    m.className='firefighter-marker';
+    m.style.left=`${ff.x}%`;
+    m.style.top=`${ff.y}%`;
+    m.style.background=getO2Color(ff.o2);
+    m.textContent=ff.id;
+    m.title=`${ff.name} - O₂: ${ff.o2}%`;
+    layer.appendChild(m);
+  });
+}
+
+initFirefighterList();
+initFirefighterMarkers();
+document.getElementById("personnelCount").textContent = firefighters.length;
+
+/* Timer */
+let sec=0;
+setInterval(()=>{sec++;const h=String(Math.floor(sec/3600)).padStart(2,'0');const m=String(Math.floor((sec%3600)/60)).padStart(2,'0');const s=String(sec%60).padStart(2,'0');document.getElementById("incidentTime").textContent=`${h}:${m}:${s}`;},1000);
+
+/* Path generator */
+const floorplan=document.getElementById("floorplan");
+const mapContainer=document.querySelector(".map-container");
+let startPoint=null,goalPoint=null;
+
+floorplan.addEventListener("click", function (e) {
+  const containerRect = mapContainer.getBoundingClientRect();
+  const imgRect = floorplan.getBoundingClientRect();
+
+  // True image aspect ratio
+  const naturalWidth = floorplan.naturalWidth;
+  const naturalHeight = floorplan.naturalHeight;
+  const containerWidth = containerRect.width;
+  const containerHeight = containerRect.height;
+
+  // How image fits (contain) inside container
+  const imageAspect = naturalWidth / naturalHeight;
+  const containerAspect = containerWidth / containerHeight;
+
+  let displayWidth, displayHeight, offsetX, offsetY;
+
+  if (imageAspect > containerAspect) {
+    // Image wider → horizontal fit, vertical letterbox
+    displayWidth = containerWidth;
+    displayHeight = containerWidth / imageAspect;
+    offsetX = 0;
+    offsetY = (containerHeight - displayHeight) / 2;
+  } else {
+    // Image taller → vertical fit, horizontal letterbox
+    displayHeight = containerHeight;
+    displayWidth = containerHeight * imageAspect;
+    offsetY = 0;
+    offsetX = (containerWidth - displayWidth) / 2;
+  }
+
+  // Convert click to relative coordinates inside visible image area
+  const clickX = e.clientX - containerRect.left - offsetX;
+  const clickY = e.clientY - containerRect.top - offsetY;
+
+  // Ignore clicks in letterboxed area
+  if (clickX < 0 || clickY < 0 || clickX > displayWidth || clickY > displayHeight)
+    return;
+
+  // Normalized coords relative to full image (0–1)
+  const nx = clickX / displayWidth;
+  const ny = clickY / displayHeight;
+
+  // Marker position (visual placement)
+  const markerX = offsetX + clickX;
+  const markerY = offsetY + clickY;
+
+  if (!startPoint) {
+    startPoint = [nx, ny];
+    placeMarker(markerX, markerY, "green", "S");
+  } else if (!goalPoint) {
+    goalPoint = [nx, ny];
+    placeMarker(markerX, markerY, "blue", "E");
+  }
+});
+
+
+document.getElementById("generateBtn").addEventListener("click",async()=>{
+  if(!startPoint||!goalPoint){alert("Please select entrance and destination!");return;}
+  try{
+    const res=await fetch("/run-maze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({start:startPoint,goal:goalPoint})});
+    const data=await res.json();
+    if(data.success) floorplan.src="static/floorplan2.png?cacheBust="+Date.now();
+    else alert("⚠️ "+data.error);
+  }catch(err){alert("❌ Could not reach backend: "+err);}
+});
+
+document.getElementById("clearBtn").addEventListener("click",()=>{
+  startPoint=null;goalPoint=null;
+  document.querySelectorAll(".path-marker").forEach(m=>m.remove());
+  floorplan.src="static/floorplan1.png?cacheBust="+Date.now();
+});
+
+function placeMarker(x,y,color,label){
+  const m=document.createElement("div");
+  m.className="path-marker";
+  m.style.left=`${x}px`;
+  m.style.top=`${y}px`;
+  m.style.background=color;
+  m.textContent=label;
+  mapContainer.appendChild(m);
+}
+
+/* Annotation Drawing */
+const annotationCanvas=document.getElementById("annotationCanvas");
+const ctx=annotationCanvas.getContext("2d");
+let drawing=false,isDrawing=false,lastX=0,lastY=0;
+
+function resizeCanvas(){
+  annotationCanvas.width=floorplan.clientWidth;
+  annotationCanvas.height=floorplan.clientHeight;
+}
+window.addEventListener("resize",resizeCanvas);
+floorplan.onload=resizeCanvas;
+resizeCanvas();
+
+document.getElementById("toggleAnnotations").addEventListener("click",()=>{
+  isDrawing=!isDrawing;
+  annotationCanvas.style.display=isDrawing?"block":"none";
+  alert(isDrawing?"✏️ Drawing mode ON":"🛑 Drawing mode OFF");
+});
+
+function getCanvasPos(e){
+  const rect=annotationCanvas.getBoundingClientRect();
+  return [e.clientX-rect.left,e.clientY-rect.top];
+}
+
+annotationCanvas.addEventListener("mousedown",e=>{if(!isDrawing)return;drawing=true;[lastX,lastY]=getCanvasPos(e);});
+annotationCanvas.addEventListener("mousemove",e=>{
+  if(!isDrawing||!drawing) return;
+  const [x,y]=getCanvasPos(e);
+  ctx.strokeStyle="yellow";
+  ctx.lineWidth=3;
+  ctx.lineCap="round";
+  ctx.beginPath();
+  ctx.moveTo(lastX,lastY);
+  ctx.lineTo(x,y);
+  ctx.stroke();
+  [lastX,lastY]=[x,y];
+});
+annotationCanvas.addEventListener("mouseup",()=>drawing=false);
+annotationCanvas.addEventListener("mouseout",()=>drawing=false);
+</script>
+</body>
+</html>
