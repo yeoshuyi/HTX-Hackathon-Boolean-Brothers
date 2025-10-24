@@ -29,6 +29,10 @@ def run_maze():
             return jsonify({"success": False, "error": "floorplan2.png not found"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+    
+@app.route('/analysis')
+def analysis():
+    return render_template('analysis.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
